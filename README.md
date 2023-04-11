@@ -56,7 +56,7 @@ Quelli che chiamo paramatri vanno aggiunti dopo l'endpoint, separati da un `/`. 
 
 L'oggetto ritornato da `dettaglioStazione` è così fatto:
 
-```json
+```jsonc
 {
     // 4 significa che è fuori regione, 3 è normale
     "tipoStazione": "numero che identifica il tipo",
@@ -85,12 +85,12 @@ Chiamando `partenze`, abbiamo i seguenti campi di interesse:
 
 La risposta di `andamentoTreno` è l'oggetto che segue, i cui campi si riferiscono alla tratta nel complesso:
 
-```json
+```jsonc
 {
     "orarioPartenza": "timestamp orario partenza programmato",
     "orarioArrivo": "timestamp orario arrivo a destinazione programmato",
 
-    // I seguenti campi non sono presente in formato %s%N
+    // I seguenti campi non sono presenti in formato %s%N
     "compoOrarioPartenzaZeroEffettivo": "orario partenza dalla prima stazione effettivo",
     "compOrarioArrivoZeroEffettivo": "orario arrivo a destinazione effettivo",
 
