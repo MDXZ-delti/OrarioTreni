@@ -204,7 +204,6 @@ class Station:
                                delay_text,
                                train.departure_platform or ''])
 
-            table.set_style(prettytable.SINGLE_BORDER)
             print(table)
 
     # TODO: implement
