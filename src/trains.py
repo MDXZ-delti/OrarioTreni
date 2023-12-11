@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 
 import argparse
-import datetime
 import json
 import logging
-import pathlib
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
+from pathlib import Path
 
 import inquirer
-import prettytable
 import requests
+from prettytable import PrettyTable
 
 # TODO:
 # - Handle the case where the train does not have all the stops.
@@ -20,7 +20,6 @@ import requests
 # - "binarioProgrammatoPartenzaCodice": "0" MAY mean that a train is in the station
 
 base_url = "http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno"
-datetime.UTC = datetime.timezone.utc
 logging.basicConfig(level=logging.WARNING)
 
 CLEAR = "\x1b[2J"
@@ -96,7 +95,7 @@ def get(method, *params):
     filename = f'{method} ({", ".join(str(p)
                                       for p in params)}) [{r.headers["Date"]}]'
     if (logging.getLogger().getEffectiveLevel() == logging.DEBUG):
-        pathlib.Path('responses').mkdir(parents=True, exist_ok=True)
+        Path('responses').mkdir(parents=True, exist_ok=True)
         with open(f"responses/{filename}.json", "w") as f:
             f.write(json.dumps(r.json(), indent=4))
 
@@ -268,19 +267,19 @@ class Station:
 
     def getDepartures(self, date=None):
         if (date is None):
-            date = datetime.datetime.now(datetime.UTC)
+            date = datetime.now(UTC)
         if isinstance(date, int):
-            date = datetime.datetime.fromtimestamp(date)
-        if isinstance(date, datetime.datetime):
+            date = datetime.fromtimestamp(date)
+        if isinstance(date, datetime):
             date = date.strftime('%a %b %d %Y %H:%M:%S GMT%z (%Z)')
         return partenze(self.id, date)
 
     def getArrivals(self, date=None):
         if (date is None):
-            date = datetime.datetime.now(datetime.UTC)
+            date = datetime.now(UTC)
         if isinstance(date, int):
-            date = datetime.datetime.fromtimestamp(date)
-        if isinstance(date, datetime.datetime):
+            date = datetime.fromtimestamp(date)
+        if isinstance(date, datetime):
             date = date.strftime('%a %b %d %Y %H:%M:%S GMT%z (%Z)')
         return arrivi(self.id, date)
 
@@ -288,10 +287,10 @@ class Station:
         codLocOrig = self.id[1:]
         codLocDest = other.id[1:]
         if (time is None):
-            time = datetime.datetime.now(datetime.UTC)
+            time = datetime.now(UTC)
         if isinstance(time, int):
-            time = datetime.datetime.fromtimestamp(time)
-        if isinstance(time, datetime.datetime):
+            time = datetime.fromtimestamp(time)
+        if isinstance(time, datetime):
             time = time.strftime('%FT%T')
         return soluzioniViaggioNew(codLocOrig, codLocDest, time)
 
@@ -303,7 +302,7 @@ class Station:
         departures = [Train(d) for d in self.getDepartures(date)]
         print(f'{BOLD}Partenze da {self.name}{RESET}')
 
-        table = prettytable.PrettyTable()
+        table = PrettyTable()
         table.field_names = ['Treno', 'Destinazione',
                              'Partenza', 'Ritardo', 'Binario']
 
@@ -347,7 +346,7 @@ class Station:
         arrivals = [Train(d) for d in self.getArrivals(date)]
         print(f'{BOLD}Arrivi a {self.name}{RESET}')
 
-        table = prettytable.PrettyTable()
+        table = PrettyTable()
         # Provenienza is the origin station, Arrivo is the arrival time
         table.field_names = ['Treno', 'Provenienza',
                              'Arrivo', 'Ritardo', 'Binario']
@@ -397,9 +396,9 @@ class Station:
                 # andamentoTreno has the filed compNumeroTreno. I have to check whether that's always true and what's there when a train has multiple numbers
                 category = vehicle['categoriaDescrizione']
                 number = vehicle['numeroTreno']
-                departure_time = datetime.datetime.fromisoformat(
+                departure_time = datetime.fromisoformat(
                     vehicle['orarioPartenza']).strftime('%H:%M')
-                arrival_time = datetime.datetime.fromisoformat(
+                arrival_time = datetime.fromisoformat(
                     vehicle['orarioArrivo']).strftime('%H:%M')
 
                 print(
@@ -407,11 +406,11 @@ class Station:
 
                 # Print a train change if present
                 if (len(solutions['soluzioni']) > 1 and vehicle is not solution['vehicles'][-1]):
-                    oa = datetime.datetime.fromisoformat(
+                    oa = datetime.fromisoformat(
                         vehicle['orarioArrivo'])
                     next_vehicle = solution['vehicles'][solution['vehicles'].index(
                         vehicle) + 1]
-                    od = datetime.datetime.fromisoformat(
+                    od = datetime.fromisoformat(
                         next_vehicle['orarioPartenza'])
                     change = int((od - oa).total_seconds() / 60)
                     print(
@@ -422,15 +421,15 @@ class Station:
 def getStats(timestamp):
     """Query the endpoint <statistiche>."""
     if (timestamp is None):
-        timestamp = datetime.datetime.now(datetime.UTC)
-    if (isinstance(timestamp, datetime.datetime)):
+        timestamp = datetime.now(UTC)
+    if (isinstance(timestamp, datetime)):
         timestamp = int(timestamp.timestamp() * 1000)
     return statistiche(timestamp)
 
 
 def showStats():
     """Show national statistics about trains."""
-    now = datetime.datetime.now(datetime.UTC)
+    now = datetime.now(UTC)
     r = statistiche(now)
     print(f'Numero treni in circolazione da mezzanotte: {r["treniGiorno"]}')
     print(f'Numero treni in circolazione ora: {r["treniCircolanti"]}')
