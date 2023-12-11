@@ -39,7 +39,9 @@ Quelli che chiamo paramatri vanno aggiunti dopo l'endpoint, separati da un `/`. 
 
 `cercaNumeroTrenoTrenoAutocomplete` restituisce delle righe della seguente forma:
 
-    NO_TRENO - STAZIONE_DI_PARTENZA|NO_TRENO-CODICE_STAZIONE-DATA_PARTENZA
+```text
+NO_TRENO - STAZIONE_DI_PARTENZA|NO_TRENO-CODICE_STAZIONE-DATA_PARTENZA
+```
 
 `cercaNumeroTreno` restituisce un oggetto così fatto:
 
