@@ -11,6 +11,11 @@ import inquirer
 import requests
 from prettytable import PrettyTable
 
+type hhmmTime = str
+type msSinceEpoch = int
+type Minute = int
+type Platform = int | str  # It might be a string if it's "tronco"
+
 # TODO:
 # - Handle the case where the train does not have all the stops (e.g. Saronno).
 # - Add "trip duration" (both scheduled and estimated); it has to be calculated
@@ -77,7 +82,7 @@ regions = {
 }
 
 
-def get(method, *params):
+def get(method: str, *params):
     """call the ViaggiaTreno API with the given method and parameters."""
     url = f'{base_url}/{method}/{"/".join(str(p) for p in params)}'
 
@@ -138,48 +143,48 @@ def soluzioniViaggioNew(codLocOrig: str, codLocDest: str, date: str):
 
 
 class Train:
-    def __init__(self, data):
+    def __init__(self, data) -> None:
         # TODO: check with the departure time if the train has departed
-        self.departed = data['inStazione']
-        self.departure_date = data['dataPartenzaTreno']
-        self.departure_time = data['compOrarioPartenza']
-        self.arrival_time = data['compOrarioArrivo']
-        self.origin = data['origine']
-        self.destination = data['destinazione']
-        self.origin_station = Station(
+        self.departed: bool = data['inStazione']
+        self.departure_date: msSinceEpoch = data['dataPartenzaTreno']
+        self.departure_time: hhmmTime = data['compOrarioPartenza']
+        self.arrival_time: hhmmTime = data['compOrarioArrivo']
+        self.origin: str = data['origine']
+        self.destination: str = data['destinazione']
+        self.origin_station: Station = Station(
             name=None, id=data['codOrigine'] or data['idOrigine'])
-        self.category = data['categoriaDescrizione'].strip()
-        self.number = data['numeroTreno']
+        self.category: str = data['categoriaDescrizione'].strip()
+        self.number: int | str = data['numeroTreno']
 
 
 # This should probably inherit from Train.
 class Journey:
-    def __init__(self, origin_station, train_number, departure_date):
+    def __init__(self, origin_station, train_number, departure_date) -> None:
         data = getJourneyInfo(origin_station, train_number, departure_date)
 
         if (not data):
             raise Exception('Trenitalia non sta fornendo aggiornamenti')
 
-        self.last_update_time = data['oraUltimoRilevamento']
-        self.last_update_station = data['stazioneUltimoRilevamento']
+        self.last_update_time: msSinceEpoch = data['oraUltimoRilevamento']
+        self.last_update_station: str = data['stazioneUltimoRilevamento']
 
         # 'ritardo' is the departure delay if the station is the
         # first of the journey, otherwise it's the arrival delay
-        self.delay = data['ritardo']
+        self.delay: Minute = data['ritardo']
 
-        self.train_numbers = train_number
+        self.train_numbers: int | str = train_number
         if (data['haCambiNumero']):
             for change in data['cambiNumero']:
                 self.train_numbers += '/' + change['nuovoNumeroTreno']
 
-        self.stops = [Stop(stop) for stop in data['fermate']]
+        self.stops: list[Stop] = [Stop(stop) for stop in data['fermate']]
 
     @classmethod
     def fromTrain(cls, train: Train) -> 'Journey':
         return cls(train.origin_station, train.number, train.departure_date)
 
     def __str__(self) -> str:
-        return f'Dettagli del treno {self.train_number} con partenza da {self.origin_station} in data {self.departure_date}'
+        return f'Dettagli del treno {self.train_numbers} con partenza da {self.origin_station} in data {self.departure_date}'
 
 
 # This should probably inherit from Station.
@@ -190,21 +195,21 @@ class Stop:
     Part of the response of the andamentoTreno() method carrying information about the platform, the delay, and the arrival/departure time.
     """
 
-    def __init__(self, data):
-        self.id = data['id']
-        self.name = data['stazione']
+    def __init__(self, data) -> None:
+        self.id: str = data['id']
+        self.name: str = data['stazione']
         # Note: some of the data about the platform might be available under partenze
-        self.scheduled_departure_platform = data['binarioProgrammatoPartenzaDescrizione']
-        self.actual_departure_platform = data['binarioEffettivoPartenzaDescrizione']
-        self.scheduled_arrival_platform = data['binarioProgrammatoArrivoDescrizione']
-        self.actual_arrival_platform = data['binarioEffettivoArrivoDescrizione']
-        self.departure_delay = data['ritardoPartenza']
-        self.arrival_delay = data['ritardoArrivo']
-        self.delay = data['ritardo']
-        self.scheduled_departure_time = data['partenza_teorica']
-        self.actual_departure_time = data['partenzaReale']
-        self.scheduled_arrival_time = data['arrivo_teorico']
-        self.actual_arrival_time = data['arrivoReale']
+        self.scheduled_departure_platform: Platform = data['binarioProgrammatoPartenzaDescrizione']
+        self.actual_departure_platform: Platform = data['binarioEffettivoPartenzaDescrizione']
+        self.scheduled_arrival_platform: Platform = data['binarioProgrammatoArrivoDescrizione']
+        self.actual_arrival_platform: Platform = data['binarioEffettivoArrivoDescrizione']
+        self.departure_delay: Minute = data['ritardoPartenza']
+        self.arrival_delay: Minute = data['ritardoArrivo']
+        self.delay: Minute = data['ritardo']
+        self.scheduled_departure_time: msSinceEpoch = data['partenza_teorica']
+        self.actual_departure_time: msSinceEpoch = data['partenzaReale']
+        self.scheduled_arrival_time: msSinceEpoch = data['arrivo_teorico']
+        self.actual_arrival_time: msSinceEpoch = data['arrivoReale']
 
     def departurePlatformHasChanged(self) -> bool:
         return self.actual_departure_platform and self.actual_departure_platform != self.scheduled_departure_platform
@@ -222,9 +227,9 @@ class Stop:
 
 
 class Station:
-    def __init__(self, name=None, id=None):
-        self.name = name
-        self.id = id
+    def __init__(self, name=None, id=None) -> None:
+        self.name: str = name
+        self.id: str = id
 
         if (name is None and id is None):
             name = inquirer.text('Inserisci il nome della stazione')
@@ -375,7 +380,7 @@ class Station:
 
             print(table)
 
-    def showJourneySolutions(self, other, time=None):
+    def showJourneySolutions(self, other, time=None) -> None:
         solutions = self.getJourneySolutions(other, time)
         print(
             f'{BOLD}Soluzioni di viaggio da {self.name} a {other.name}{RESET}')
@@ -432,7 +437,7 @@ def getStats(timestamp):
     return statistiche(timestamp)
 
 
-def showStats():
+def showStats() -> None:
     """Show national statistics about trains."""
     now = datetime.now(UTC)
     r = statistiche(now)
