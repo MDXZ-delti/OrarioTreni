@@ -31,7 +31,7 @@ Quelli che chiamo paramatri vanno aggiunti dopo l'endpoint, separati da un `/`. 
 | `autocompletaStazione(p)` | `p` è il nome della stazione, parziale o completo | Lista di stazioni che iniziano con `p` con relativo codice identificativo |
 | `dettaglioStazione(s, r)` | `s` è il codice della stazione, `r` è il codice della regione | Informazioni sulla stazione |
 | `regione(s)` | `s` è il codice della stazione | Codice della regione |
-| `partenze(s, t)` <br> `arrivi(s, t)` | `s` è il codice della stazione, `t` è l'orario nel formato `%a %b %d %Y %T GMT%z (%Z)` | Lista dei treni in partenza/in arrivo |
+| `partenze(s, t)` e `arrivi(s, t)` | `s` è il codice della stazione, `t` è l'orario nel formato `%a %b %d %Y %T GMT%z (%Z)` | Lista dei treni in partenza/in arrivo |
 | `andamentoTreno(s, n,  d)` | `s` è il codice della stazione di partenza, `n` è il numero del treno, `d` è la data di partenza espressa in millisecondi dalla Epoch | Informazioni sul treno |
 | `soluzioniViaggioNew(p, a, d)` | `p` ed `a` sono i codici senza la S iniziale delle stazioni di partenza e di arrivo, `d` è la data nel formato `%FT%H:%M:%S` | Lista di itinerari |
 | `cercaNumeroTrenoTrenoAutocomplete(n)` | `n` è il numero del treno | Informazioni testuali sul treno |
@@ -118,9 +118,18 @@ La risposta di `andamentoTreno` è l'oggetto che segue, i cui campi si riferisco
             "arrivoReale": "timestamp arrivo reale",
             "tipoFermata": "può essere P, F o A"
         }
-    ]
+    ],
+
+    // Formato: h:m, ad esempio 1:6 (1 ora e 6 minuti)
+    // Poco utile perché si riferisce al viaggio nel complesso, non alle tratte
+    // singole che lo compongono (es. Milano-Genova e non Pavia-Tortona)
+    "compDurata": "durata del viaggio dalla stazione di partenza a quella di arrivo",
 }
 ```
+
+The object returned by `andamentoTreno` "extends" the object returned by `partenze`.
+They have a `binarioProgrammatoPartenzaCodice` field.
+A value of `"0"` might mean that the train is in the station.
 
 Di seguito la tabella dei codici delle regioni:
 
