@@ -4,7 +4,7 @@ import argparse
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import inquirer
@@ -12,12 +12,10 @@ import requests
 from prettytable import PrettyTable
 
 # TODO:
-# - Handle the case where the train does not have all the stops.
-#   Saronno is a good example.
-# - Test loglevel
-# - Add "trip duration" field ("compDurata" in andamentoTreno)
-# - Check the field "nonPartito" under partenze
-# - "binarioProgrammatoPartenzaCodice": "0" MAY mean that a train is in the station
+# - Handle the case where the train does not have all the stops (e.g. Saronno).
+# - Add "trip duration" (both scheduled and estimated); it has to be calculated
+# - Use the field "nonPartito" under "partenze" (it seems correct)
+# - Add the CLI option "--log-level" to set the logging level
 
 base_url = "http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno"
 logging.basicConfig(level=logging.WARNING)
@@ -40,8 +38,7 @@ BLUE = "\x1b[34m"
 MAGENTA = "\x1b[35m"
 CYAN = "\x1b[36m"
 WHITE = "\x1b[37m"
-
-ORANGE = "\x1B[38;2;255;165;0m"
+# Custom color with \x1B[38;2;R;G;Bm
 
 BLACK_BG = "\x1b[40m"
 RED_BG = "\x1b[41m"
@@ -51,8 +48,6 @@ BLUE_BG = "\x1b[44m"
 MAGENTA_BG = "\x1b[45m"
 CYAN_BG = "\x1b[46m"
 WHITE_BG = "\x1b[47m"
-
-# Custom color with \x1B[38;2;R;G;Bm
 # Custom background color with \x1B[48;2;R;G;Bm
 
 regions = {
@@ -157,8 +152,7 @@ class Train:
         self.number = data['numeroTreno']
 
 
-# Maybe this should inherit from Train.
-# I have to check the JSONs returned by the API
+# This should probably inherit from Train.
 class Journey:
     def __init__(self, origin_station, train_number, departure_date):
         data = getJourneyInfo(origin_station, train_number, departure_date)
@@ -181,14 +175,14 @@ class Journey:
         self.stops = [Stop(stop) for stop in data['fermate']]
 
     @classmethod
-    def fromTrain(cls, train: Train):
+    def fromTrain(cls, train: Train) -> 'Journey':
         return cls(train.origin_station, train.number, train.departure_date)
 
     def __str__(self) -> str:
         return f'Dettagli del treno {self.train_number} con partenza da {self.origin_station} in data {self.departure_date}'
 
 
-# This should inherit from Station.
+# This should probably inherit from Station.
 # I could then call getDepartures or something from a Stop
 class Stop:
     """Stop in a journey.
@@ -337,7 +331,6 @@ class Station:
 
             print(table)
 
-    # TODO: implement
     def showArrivals(self, date=None) -> None:
         """Prints the departures from the station.
 
@@ -382,39 +375,51 @@ class Station:
 
             print(table)
 
-    # TODO: adjust the code
     def showJourneySolutions(self, other, time=None):
-        print('To be implemented, this is a stub')
         solutions = self.getJourneySolutions(other, time)
         print(
             f'{BOLD}Soluzioni di viaggio da {self.name} a {other.name}{RESET}')
         for solution in solutions['soluzioni']:
-            duration = f'{str(solution["durata"]).replace(":", "h")} min'
-            sols = []
+            total_duration = solution['durata'].lstrip('0').replace(':', 'h')
             for vehicle in solution['vehicles']:
                 # Note: this field is empty in andamentoTreno, while "categoria" isn't
-                # andamentoTreno has the filed compNumeroTreno. I have to check whether that's always true and what's there when a train has multiple numbers
+                # andamentoTreno has the field compNumeroTreno. I have to check whether that's always true and what's there when a train has multiple numbers
                 category = vehicle['categoriaDescrizione']
                 number = vehicle['numeroTreno']
-                departure_time = datetime.fromisoformat(
-                    vehicle['orarioPartenza']).strftime('%H:%M')
-                arrival_time = datetime.fromisoformat(
-                    vehicle['orarioArrivo']).strftime('%H:%M')
+                departure_time_dt = datetime.fromisoformat(
+                    vehicle['orarioPartenza'])
+                arrival_time_dt = datetime.fromisoformat(
+                    vehicle['orarioArrivo'])
+                departure_time = departure_time_dt.strftime('%H:%M')
+                arrival_time = arrival_time_dt.strftime('%H:%M')
+
+                def td_to_str(td: timedelta) -> str:
+                    minutes = td.seconds // 60
+
+                    if (minutes >= 60 * 24):
+                        return f'{minutes // (60 * 24)}d{minutes % (60 * 24) // 60}h{minutes % 60:02}'
+                    elif (minutes >= 60):
+                        return f'{minutes // 60}h{minutes % 60:02}'
+                    else:
+                        return f'{minutes} min'
+
+                duration = td_to_str(arrival_time_dt - departure_time_dt)
 
                 print(
-                    f'{departure_time}–{arrival_time} ({category}{" " if category else ""}{number})')
+                    f'{departure_time}–{arrival_time} ({category}{" " if category else ""}{number}) [{duration}]')
 
                 # Print a train change if present
                 if (len(solutions['soluzioni']) > 1 and vehicle is not solution['vehicles'][-1]):
-                    oa = datetime.fromisoformat(
-                        vehicle['orarioArrivo'])
                     next_vehicle = solution['vehicles'][solution['vehicles'].index(
                         vehicle) + 1]
+                    oa = datetime.fromisoformat(
+                        vehicle['orarioArrivo'])
                     od = datetime.fromisoformat(
                         next_vehicle['orarioPartenza'])
-                    change = int((od - oa).total_seconds() / 60)
+                    change = td_to_str(od - oa)
                     print(
-                        f'Cambio a {vehicle["destinazione"]} di {change} min')
+                        f'Cambio a {vehicle["destinazione"]} [{change}]')
+            print("Durata totale:", total_duration)
             print()
 
 
