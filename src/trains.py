@@ -394,7 +394,7 @@ class Station:
                 arrival_time = arrival_time_dt.strftime('%H:%M')
 
                 def td_to_str(td: timedelta) -> str:
-                    minutes = td.seconds // 60
+                    minutes = int(td.total_seconds()) // 60
 
                     if (minutes >= 60 * 24):
                         return f'{minutes // (60 * 24)}d{minutes % (60 * 24) // 60}h{minutes % 60:02}'
