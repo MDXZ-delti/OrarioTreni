@@ -424,7 +424,7 @@ class Station:
                     f'{departure_time}–{arrival_time} ({category}{" " if category else ""}{number}) [{duration}]')
 
                 # Print a train change if present
-                if (len(solutions['soluzioni']) > 1 and vehicle is not solution['vehicles'][-1]):
+                if (vehicle is not solution['vehicles'][-1]):
                     next_vehicle = solution['vehicles'][solution['vehicles'].index(
                         vehicle) + 1]
                     oa = datetime.fromisoformat(
