@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
-import argparse
 import json
 import logging
+from argparse import ArgumentParser, BooleanOptionalAction
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -11,9 +11,10 @@ import inquirer
 import requests
 from prettytable import PrettyTable
 
-type hhmmTime = str
 type msSinceEpoch = int
 type Minute = int
+type Hour = int
+type hhmmTime = str
 type Platform = int | str  # It might be a string if it's "tronco"
 
 # TODO:
@@ -142,6 +143,23 @@ def soluzioniViaggioNew(codLocOrig: str, codLocDest: str, date: str):
     return get("soluzioniViaggioNew", codLocOrig, codLocDest, date)
 
 
+class Duration(timedelta):
+    def __new__(cls, td: timedelta) -> 'Duration':
+        return super().__new__(cls, td.days, td.seconds, td.microseconds)
+
+    def __init__(self, td: timedelta) -> None:
+        self.hours: Hour = int(self.total_seconds() // 3600 % 24)
+        self.minutes: Minute = int(self.total_seconds() // 60 % 60)
+
+    def __str__(self) -> str:
+        if (self.days > 0):
+            return f'{self.days}d{self.hours:02}h{self.minutes:02}'
+        elif (self.hours > 0):
+            return f'{self.hours}h{self.minutes:02}'
+        else:
+            return f'{self.minutes} min'
+
+
 class Train:
     def __init__(self, data) -> None:
         # TODO: check with the departure time if the train has departed
@@ -160,7 +178,7 @@ class Train:
 # This should probably inherit from Train.
 class Journey:
     def __init__(self, origin_station, train_number, departure_date) -> None:
-        data = getJourneyInfo(origin_station, train_number, departure_date)
+        data = andamentoTreno(origin_station.id, train_number, departure_date)
 
         if (not data):
             raise Exception('Trenitalia non sta fornendo aggiornamenti')
@@ -385,6 +403,7 @@ class Station:
         print(
             f'{BOLD}Soluzioni di viaggio da {self.name} a {other.name}{RESET}')
         for solution in solutions['soluzioni']:
+            # TODO: create a proper Duration
             total_duration = solution['durata'].lstrip('0').replace(':', 'h')
             for vehicle in solution['vehicles']:
                 # Note: this field is empty in andamentoTreno, while "categoria" isn't
@@ -398,17 +417,8 @@ class Station:
                 departure_time = departure_time_dt.strftime('%H:%M')
                 arrival_time = arrival_time_dt.strftime('%H:%M')
 
-                def td_to_str(td: timedelta) -> str:
-                    minutes = int(td.total_seconds()) // 60
-
-                    if (minutes >= 60 * 24):
-                        return f'{minutes // (60 * 24)}d{minutes % (60 * 24) // 60}h{minutes % 60:02}'
-                    elif (minutes >= 60):
-                        return f'{minutes // 60}h{minutes % 60:02}'
-                    else:
-                        return f'{minutes} min'
-
-                duration = td_to_str(arrival_time_dt - departure_time_dt)
+                duration = Duration(
+                    arrival_time_dt - departure_time_dt)
 
                 print(
                     f'{departure_time}–{arrival_time} ({category}{" " if category else ""}{number}) [{duration}]')
@@ -421,61 +431,54 @@ class Station:
                         vehicle['orarioArrivo'])
                     od = datetime.fromisoformat(
                         next_vehicle['orarioPartenza'])
-                    change = td_to_str(od - oa)
+                    change = Duration(od - oa)
                     print(
                         f'Cambio a {vehicle["destinazione"]} [{change}]')
             print("Durata totale:", total_duration)
             print()
 
 
-def getStats(timestamp):
-    """Query the endpoint <statistiche>."""
-    if (timestamp is None):
-        timestamp = datetime.now(UTC)
-    if (isinstance(timestamp, datetime)):
-        timestamp = int(timestamp.timestamp() * 1000)
-    return statistiche(timestamp)
+class Stats:
+    def __init__(self) -> None:
+        self.datetime: datetime = datetime.now(UTC)
+        timestamp: msSinceEpoch = int(
+            self.datetime.timestamp() * 1000)
+        data = statistiche(timestamp)
+        self.trains_today: int = data['treniGiorno']
+        self.trains_now: int = data['treniCircolanti']
 
-
-def showStats() -> None:
-    """Show national statistics about trains."""
-    now = datetime.now(UTC)
-    r = statistiche(now)
-    print(f'Numero treni in circolazione da mezzanotte: {r["treniGiorno"]}')
-    print(f'Numero treni in circolazione ora: {r["treniCircolanti"]}')
-    print(f'{DIM}Ultimo aggiornamento: {
-          now.astimezone().strftime("%T")}\n{RESET}')
-
-
-def getJourneyInfo(departure_station, train_number, departure_date):
-    """Query the endpoint <andamentoTreno>."""
-    return andamentoTreno(departure_station.id,
-                          train_number, departure_date)
+    def __str__(self) -> str:
+        return (
+            f'Numero treni in circolazione da mezzanotte: {
+                self.trains_today}\n'
+            f'Numero treni in circolazione ora: {self.trains_now}\n'
+            f'{DIM}Ultimo aggiornamento: {self.datetime.astimezone().strftime("%T")}{
+                RESET}'
+        )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
+    ap = ArgumentParser(
         description='Get information about trains in Italy')
 
-    parser.add_argument('-v', '--version', action='version',
-                        version='%(prog)s 0.1')
-    parser.add_argument('-d', '--departures', metavar='STATION', type=str,
-                        help='show departures from a station')
-    parser.add_argument('-a', '--arrivals', metavar='STATION', type=str,
-                        help='show arrivals to a station')
-    parser.add_argument('-s', '--solutions', metavar=('DEPARTURE',
-                        'ARRIVAL'), type=str, nargs=2, help='show journey solutions from DEPARTURE to ARRIVAL')
-    parser.add_argument(
-        '-t', '--time', help='time to use for the other actions')
-    parser.add_argument(
-        '--stats', action=argparse.BooleanOptionalAction, help='show/don\'t show stats (defaults to True)', default=True)
+    ap.add_argument('-v', '--version', action='version',
+                    version='%(prog)s 0.1')
+    ap.add_argument('-d', '--departures', metavar='STATION',
+                    type=str, help='show departures from a station')
+    ap.add_argument('-a', '--arrivals', metavar='STATION',
+                    type=str, help='show arrivals to a station')
+    ap.add_argument('-s', '--solutions', metavar=('DEPARTURE', 'ARRIVAL'),
+                    type=str, nargs=2, help='show journey solutions from DEPARTURE to ARRIVAL')
+    ap.add_argument('-t', '--time', help='time to use for the other actions')
+    ap.add_argument('--stats', action=BooleanOptionalAction,
+                    help='show/don\'t show stats (defaults to True)', default=True)
 
-    parser.epilog = 'Departures and arrivals show trains from/to the selected station in a range from 15 minutes before to 90 minutes after the selected time. If no time is specified, the current time is used.'
+    ap.epilog = 'Departures and arrivals show trains from/to the selected station in a range from 15 minutes before to 90 minutes after the selected time. If no time is specified, the current time is used.'
 
-    args = parser.parse_args()
+    args = ap.parse_args()
 
     if (args.stats):
-        showStats()
+        print(Stats())
 
     if (args.departures):
         station = Station(args.departures)
