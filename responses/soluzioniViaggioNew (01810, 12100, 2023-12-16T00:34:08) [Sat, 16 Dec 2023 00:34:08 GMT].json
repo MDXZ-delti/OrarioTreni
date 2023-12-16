@@ -1,0 +1,48 @@
+{
+    "soluzioni": [
+        {
+            "durata": "04:26",
+            "vehicles": [
+                {
+                    "origine": "Tortona",
+                    "destinazione": "Bologna Centrale",
+                    "orarioPartenza": "2023-12-16T18:48:00",
+                    "orarioArrivo": "2023-12-16T21:25:00",
+                    "categoria": "197",
+                    "categoriaDescrizione": "Regionale",
+                    "numeroTreno": "2091"
+                },
+                {
+                    "origine": "Bologna Centrale",
+                    "destinazione": "Palermo C.le",
+                    "orarioPartenza": "2023-12-16T22:48:00",
+                    "orarioArrivo": "2023-12-17T16:55:00",
+                    "categoria": "214",
+                    "categoriaDescrizione": "ICN",
+                    "numeroTreno": "1963"
+                },
+                {
+                    "origine": "Palermo C.le",
+                    "destinazione": "Piraineto",
+                    "orarioPartenza": "2023-12-17T17:08:00",
+                    "orarioArrivo": "2023-12-17T17:58:00",
+                    "categoria": "197",
+                    "categoriaDescrizione": "Regionale",
+                    "numeroTreno": "21751"
+                },
+                {
+                    "origine": "Piraineto",
+                    "destinazione": "Trapani",
+                    "orarioPartenza": "2023-12-17T18:35:00",
+                    "orarioArrivo": "2023-12-17T21:34:00",
+                    "categoria": "197",
+                    "categoriaDescrizione": "Regionale",
+                    "numeroTreno": "21883"
+                }
+            ]
+        }
+    ],
+    "origine": "Tortona",
+    "destinazione": "Trapani",
+    "errore": null
+}
