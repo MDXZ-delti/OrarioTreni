@@ -4,27 +4,16 @@ import json
 import logging
 from argparse import ArgumentParser, BooleanOptionalAction
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from pathlib import Path
 
-import inquirer
+import inquirer  # type: ignore
 import requests
 from prettytable import PrettyTable
 
-type msSinceEpoch = int
-type Minute = int
-type Hour = int
-type hhmmTime = str
-type Platform = int | str  # It might be a string if it's "tronco"
-
 # TODO:
-# - Handle the case where the train does not have all the stops (e.g. Saronno).
+# - Handle the case where the train does not have all the stops (e.g. Saronno)
 # - Add "trip duration" (both scheduled and estimated); it has to be calculated
-# - Use the field "nonPartito" under "partenze" (it seems correct)
-# - Add the CLI option "--log-level" to set the logging level
-
-base_url = "http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno"
-logging.basicConfig(level=logging.WARNING)
 
 CLEAR = "\x1b[2J"
 
@@ -35,6 +24,7 @@ UNDERSCORE = "\x1b[4m"
 BLINK = "\x1b[5m"
 REVERSE = "\x1b[7m"
 HIDDEN = "\x1b[8m"
+STRIKETHROUGH = "\x1b[9m"
 
 BLACK = "\x1b[30m"
 RED = "\x1b[31m"
@@ -55,6 +45,8 @@ MAGENTA_BG = "\x1b[45m"
 CYAN_BG = "\x1b[46m"
 WHITE_BG = "\x1b[47m"
 # Custom background color with \x1B[48;2;R;G;Bm
+
+CET = timezone(timedelta(seconds=3600), 'CET')
 
 regions = {
     0: "Italia",
@@ -85,6 +77,7 @@ regions = {
 
 def get(method: str, *params):
     """call the ViaggiaTreno API with the given method and parameters."""
+    base_url = "http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno"
     url = f'{base_url}/{method}/{"/".join(str(p) for p in params)}'
 
     r = requests.get(url)
@@ -93,12 +86,14 @@ def get(method: str, *params):
         logging.error(f'Error {r.status_code} while calling {url}: {r.text}')
         return None
 
-    filename = f'{method} ({", ".join(str(p)
-                                      for p in params)}) [{r.headers["Date"]}]'
     if (logging.getLogger().getEffectiveLevel() == logging.DEBUG):
+        dt = datetime.strptime(
+            r.headers['Date'], '%a, %d %b %Y %H:%M:%S %Z').strftime('%Y-%j %X')
+        filename = f'{dt} {method}({", ".join(str(p) for p in params)})'
         Path('responses').mkdir(parents=True, exist_ok=True)
         with open(f"responses/{filename}.json", "w") as f:
-            f.write(json.dumps(r.json(), indent=4))
+            json.dump(r.json(), f, indent=2)
+            f.write('\n')
 
     return r.json() if 'json' in r.headers['Content-Type'] else r.text
 
@@ -148,8 +143,8 @@ class Duration(timedelta):
         return super().__new__(cls, td.days, td.seconds, td.microseconds)
 
     def __init__(self, td: timedelta) -> None:
-        self.hours: Hour = int(self.total_seconds() // 3600 % 24)
-        self.minutes: Minute = int(self.total_seconds() // 60 % 60)
+        self.hours: int = int(self.total_seconds() // 3600) % 24
+        self.minutes: int = int(self.total_seconds() // 60) % 60
 
     def __str__(self) -> str:
         if (self.days > 0):
@@ -161,48 +156,88 @@ class Duration(timedelta):
 
 
 class Train:
+    """
+    A train is identified by its origin station, its number and its departure date.
+    """
+
     def __init__(self, data) -> None:
+        if (data['orarioPartenza'] is not None):
+            departure_datetime: datetime = datetime.fromtimestamp(
+                data['orarioPartenza'] / 1000).replace(tzinfo=CET)
+            self.departure_date: date = departure_datetime.date()
+            self.departure_time: time = departure_datetime.timetz()
+        if (data['orarioArrivo'] is not None):
+            arrival_datetime: datetime = datetime.fromtimestamp(
+                data['orarioArrivo'] / 1000).replace(tzinfo=CET)
+            self.arrival_date: date = arrival_datetime.date()
+            self.arrival_time: time = arrival_datetime.timetz()
+
         # TODO: check with the departure time if the train has departed
-        self.departed: bool = data['inStazione']
-        self.departure_date: msSinceEpoch = data['dataPartenzaTreno']
-        self.departure_time: hhmmTime = data['compOrarioPartenza']
-        self.arrival_time: hhmmTime = data['compOrarioArrivo']
-        self.origin: str = data['origine']
-        self.destination: str = data['destinazione']
-        self.origin_station: Station = Station(
-            name=None, id=data['codOrigine'] or data['idOrigine'])
+        self.provenance: str = data['origine']  # Only in arrivi
+        self.destination: str = data['destinazione']  # Only in partenze
         self.category: str = data['categoriaDescrizione'].strip()
-        self.number: int | str = data['numeroTreno']
+        self.changes_number: bool = data['haCambiNumero']
 
+        self.departed: bool = not data['nonPartito']
+        self.in_station: bool = data['inStazione']  # Not sure what this means
 
-# This should probably inherit from Train.
-class Journey:
-    def __init__(self, origin_station, train_number, departure_date) -> None:
-        data = andamentoTreno(origin_station.id, train_number, departure_date)
+        # Will be overwritten if andamentoTreno() works since it's more accurate
+        self.delay: timedelta = timedelta(minutes=data['ritardo'])
 
-        if (not data):
-            raise Exception('Trenitalia non sta fornendo aggiornamenti')
+        # Overwritten if andamentoTreno() works
+        self.numbers: dict[str, int] = {
+            data['codOrigine']: data['numeroTreno']
+        }
 
-        self.last_update_time: msSinceEpoch = data['oraUltimoRilevamento']
-        self.last_update_station: str = data['stazioneUltimoRilevamento']
+        #############################
+        ### andamentoTreno() data ###
+        #############################
+
+        at_data = andamentoTreno(
+            data['codOrigine'], data['numeroTreno'], data['dataPartenzaTreno'])
+
+        # If this happens, viaggiatreno.it is not provinding real-time data
+        # Now I have to change everything, fuck me
+        self.no_data = False
+        if (not at_data):
+            print(
+                f"Trenitalia non sta fornendo dati in tempo reale per il treno {
+                    self}\n"
+                f"Parametri richiesta andamentoTreno: {
+                    data['codOrigine']}/{data['numeroTreno']}/{data['dataPartenzaTreno']}"
+            )
+            self.no_data = True
+            return
+
+        self.origin_station: Station = Station(
+            at_data['origine'], at_data['idOrigine'])
+
+        if at_data['oraUltimoRilevamento'] is not None:
+            self.last_update: datetime = datetime.fromtimestamp(
+                at_data['oraUltimoRilevamento'] / 1000)
+
+        # It might not be an actual station (e.g. "bivio")
+        self.last_update_station: str = at_data['stazioneUltimoRilevamento']
+
+        ### Update values with better data ###
 
         # 'ritardo' is the departure delay if the station is the
         # first of the journey, otherwise it's the arrival delay
-        self.delay: Minute = data['ritardo']
+        self.delay = timedelta(minutes=at_data['ritardo'])
 
-        self.train_numbers: int | str = train_number
-        if (data['haCambiNumero']):
-            for change in data['cambiNumero']:
-                self.train_numbers += '/' + change['nuovoNumeroTreno']
+        self.numbers = {
+            self.origin_station.name: data['numeroTreno']
+        }
 
-        self.stops: list[Stop] = [Stop(stop) for stop in data['fermate']]
+        if (self.changes_number):
+            for change in at_data['cambiNumero']:
+                self.numbers[change['stazione']] = int(
+                    change['nuovoNumeroTreno'])
 
-    @classmethod
-    def fromTrain(cls, train: Train) -> 'Journey':
-        return cls(train.origin_station, train.number, train.departure_date)
+        self.stops: list[Stop] = [Stop(stop) for stop in at_data['fermate']]
 
     def __str__(self) -> str:
-        return f'Dettagli del treno {self.train_numbers} con partenza da {self.origin_station} in data {self.departure_date}'
+        return f'{self.category} {"/".join(str(n) for n in self.numbers.values())}'
 
 
 # This should probably inherit from Station.
@@ -216,195 +251,261 @@ class Stop:
     def __init__(self, data) -> None:
         self.id: str = data['id']
         self.name: str = data['stazione']
+
+        self.departure_delay: timedelta = timedelta(
+            minutes=data['ritardoPartenza'])
+        self.arrival_delay: timedelta = timedelta(
+            minutes=data['ritardoArrivo'])
+        self.delay: timedelta = timedelta(minutes=data['ritardo'])
+
+        if (data['partenza_teorica'] is not None):
+            self.scheduled_departure_datetime: datetime = datetime.fromtimestamp(
+                data['partenza_teorica'] / 1000).replace(tzinfo=CET)
+
+        if (data['partenzaReale'] is not None):
+            self.actual_departure_datetime: datetime = datetime.fromtimestamp(
+                data['partenzaReale'] / 1000).replace(tzinfo=CET)
+
+        if (data['arrivo_teorico'] is not None):
+            self.scheduled_arrival_datetime: datetime = datetime.fromtimestamp(
+                data['arrivo_teorico'] / 1000).replace(tzinfo=CET)
+
+        if (data['arrivoReale'] is not None):
+            self.actual_arrival_datetime: datetime = datetime.fromtimestamp(
+                data['arrivoReale'] / 1000).replace(tzinfo=CET)
+
         # Note: some of the data about the platform might be available under partenze
-        self.scheduled_departure_platform: Platform = data['binarioProgrammatoPartenzaDescrizione']
-        self.actual_departure_platform: Platform = data['binarioEffettivoPartenzaDescrizione']
-        self.scheduled_arrival_platform: Platform = data['binarioProgrammatoArrivoDescrizione']
-        self.actual_arrival_platform: Platform = data['binarioEffettivoArrivoDescrizione']
-        self.departure_delay: Minute = data['ritardoPartenza']
-        self.arrival_delay: Minute = data['ritardoArrivo']
-        self.delay: Minute = data['ritardo']
-        self.scheduled_departure_time: msSinceEpoch = data['partenza_teorica']
-        self.actual_departure_time: msSinceEpoch = data['partenzaReale']
-        self.scheduled_arrival_time: msSinceEpoch = data['arrivo_teorico']
-        self.actual_arrival_time: msSinceEpoch = data['arrivoReale']
+        self.scheduled_departure_platform: str = data['binarioProgrammatoPartenzaDescrizione']
+        self.actual_departure_platform: str = data['binarioEffettivoPartenzaDescrizione']
+        self.scheduled_arrival_platform: str = data['binarioProgrammatoArrivoDescrizione']
+        self.actual_arrival_platform: str = data['binarioEffettivoArrivoDescrizione']
 
-    def departurePlatformHasChanged(self) -> bool:
-        return self.actual_departure_platform and self.actual_departure_platform != self.scheduled_departure_platform
+        # If the actual departure platform is available and the train has not departed yet, the train is in the station
+        self.train_in_station_if_not_departed: bool = self.actual_departure_platform is not None
 
-    def arrivalPlatformHasChanged(self) -> bool:
-        return self.actual_arrival_platform and self.actual_arrival_platform != self.scheduled_arrival_platform
+        if self.actual_departure_platform is None and self.scheduled_departure_platform is None:
+            self.actual_departure_platform = "N/A"
 
-    def getDeparturePlatform(self) -> str:
-        """Get the actual departure platform if it's available, otherwise the scheduled one."""
-        return self.actual_departure_platform if self.departurePlatformHasChanged() else self.scheduled_departure_platform
+        if self.actual_departure_platform is None:
+            self.actual_departure_platform = self.scheduled_departure_platform
 
-    def getArrivalPlatform(self) -> str:
-        """Get the actual arrival platform if it's available, otherwise the scheduled one."""
-        return self.actual_arrival_platform if self.arrivalPlatformHasChanged() else self.scheduled_arrival_platform
+        if self.scheduled_departure_platform is None:
+            self.scheduled_departure_platform = self.actual_departure_platform
+
+        self.departure_platform_has_changed: bool = self.actual_departure_platform != self.scheduled_departure_platform
+
+        if self.actual_arrival_platform is None and self.scheduled_arrival_platform is None:
+            self.actual_arrival_platform = "N/A"
+
+        if self.actual_arrival_platform is None:
+            self.actual_arrival_platform = self.scheduled_arrival_platform
+
+        if self.scheduled_arrival_platform is None:
+            self.scheduled_arrival_platform = self.actual_arrival_platform
+
+        self.arrival_platform_has_changed: bool = self.actual_arrival_platform != self.scheduled_arrival_platform
 
 
 class Station:
-    def __init__(self, name=None, id=None) -> None:
-        self.name: str = name
-        self.id: str = id
+    # TODO: fix this (it should have an id, otherwise for each call to get* I have to call cercaStazione() again
+    def __init__(self, partialName: str, id: str | None = None) -> None:
+        if (id is not None):
+            self.id: str = id
+            self.name: str = partialName
+            return
 
-        if (name is None and id is None):
-            name = inquirer.text('Inserisci il nome della stazione')
+        r = cercaStazione(partialName)
 
-        if (id is None):
-            r = cercaStazione(name)
+        if (len(r) == 0):
+            print('Nessuna stazione trovata')
+            return
 
-            if (len(r) == 0):
-                print('Nessuna stazione trovata')
-                return
+        # TODO: let the user choose the station (e.g. "Ancona")
+        if (len(r) == 1) or (partialName.upper() in (station['nomeLungo'] for station in r)):
+            self.name = str(r[0]['nomeLungo'])
+            self.id = str(r[0]['id'])
+            return
 
-            if (len(r) == 1):
-                self.name = r[0]['nomeLungo']
-                self.id = r[0]['id']
-                return
-
-            for station in r:
-                if (station['nomeLungo'] == name.upper()):
-                    self.name = station['nomeLungo']
-                    self.id = station['id']
-                    return
-
-            guesses = tuple((station['nomeLungo'], station['id'])
-                            for station in r)
-            choice = inquirer.list_input(
-                message='Seleziona la stazione',
-                choices=guesses
-            )
-            self.name = next(s[0] for s in guesses if s[1] == choice)
-            self.id = choice
+        guesses = tuple((station['nomeLungo'], station['id']) for station in r)
+        choice = inquirer.list_input(
+            message='Seleziona la stazione',
+            choices=guesses
+        )
+        self.name = next(s[0] for s in guesses if s[1] == choice)
+        self.id = choice
 
     def __str__(self) -> str:
         return f'Stazione di {self.name}'
 
-    def getDepartures(self, date=None):
-        if (date is None):
-            date = datetime.now(UTC)
-        if isinstance(date, int):
-            date = datetime.fromtimestamp(date)
-        if isinstance(date, datetime):
-            date = date.strftime('%a %b %d %Y %H:%M:%S GMT%z (%Z)')
-        return partenze(self.id, date)
+    def getDepartures(self, dt: datetime):
+        return partenze(self.id, dt.strftime('%a %b %d %Y %H:%M:%S GMT%z (%Z)'))
 
-    def getArrivals(self, date=None):
-        if (date is None):
-            date = datetime.now(UTC)
-        if isinstance(date, int):
-            date = datetime.fromtimestamp(date)
-        if isinstance(date, datetime):
-            date = date.strftime('%a %b %d %Y %H:%M:%S GMT%z (%Z)')
-        return arrivi(self.id, date)
+    def getArrivals(self, dt: datetime):
+        return arrivi(self.id, dt.strftime('%a %b %d %Y %H:%M:%S GMT%z (%Z)'))
 
-    def getJourneySolutions(self, other, time=None):
-        codLocOrig = self.id[1:]
-        codLocDest = other.id[1:]
-        if (time is None):
-            time = datetime.now(UTC)
-        if isinstance(time, int):
-            time = datetime.fromtimestamp(time)
-        if isinstance(time, datetime):
-            time = time.strftime('%FT%T')
-        return soluzioniViaggioNew(codLocOrig, codLocDest, time)
+    def getJourneySolutions(self, other: 'Station', dt: datetime):
+        return soluzioniViaggioNew(self.id[1:], other.id[1:], dt.strftime('%FT%T'))
 
-    def showDepartures(self, date=None) -> None:
+    def showDepartures(self, dt: datetime) -> None:
         """Prints the departures from the station.
 
         Gets the actual delay and platform by querying the API (andamentoTreno) for each train.
         """
-        departures = [Train(d) for d in self.getDepartures(date)]
         print(f'{BOLD}Partenze da {self.name}{RESET}')
+
+        departures = self.getDepartures(dt)
+        if not departures:
+            print('Nessun treno in partenza')
+            return
 
         table = PrettyTable()
         table.field_names = ['Treno', 'Destinazione',
                              'Partenza', 'Ritardo', 'Binario']
 
-        if (len(departures) == 0):
-            print('Nessun treno in partenza')
-            return
-
         with ThreadPoolExecutor(len(departures)) as pool:
-            futures = pool.map(Journey.fromTrain, departures)
-            for (train, journey) in zip(departures, futures, strict=True):
-                # Number changes are returned by andamentoTreno()
-                # partenze() only says if the train has changed number
-                train.numbers = journey.train_numbers
+            # Calls Train(d) for each d in departures where d is JSON data
+            futures = pool.map(Train, departures)
 
-                # Get info relative to the selected station
-                stop = next(s for s in journey.stops if s.id == self.id)
+            for train in futures:
+                minutes = int(train.delay.total_seconds() // 60)
+                if minutes > 0:
+                    delay = f'{RED}{minutes:+} min{RESET}'
+                elif minutes < 0:
+                    delay = f'{GREEN}{minutes:+} min{RESET}'
+                else:
+                    if train.departed:
+                        delay = 'In orario'
+                    else:
+                        delay = 'Not enough data'
+
+                if train.no_data:
+                    table.add_row([f'{YELLOW}{train}{RESET}',
+                                   f'{YELLOW}{train.destination}{RESET}',
+                                   f'{YELLOW}{train.departure_time.strftime('%H:%M')}{
+                        RESET}',
+                        f'{YELLOW}{delay}{RESET}',
+                        f'{YELLOW}No real-time info{RESET}'])
+                    continue
+
+                ### Update values with better data ###
+
+                for s in train.stops:
+                    if s.id == train.origin_station.id:
+                        origin: Stop = s
+                    if s.id == self.id:
+                        stop: Stop = s
+
+                if train.delay == timedelta(minutes=0):
+                    # Those two are basically the same. "In stazione" means that
+                    # the train is in the station from which showDepartures() is
+                    # called and it has not departed yet. "Non partito" means
+                    # that the train is in the station from which it departs and
+                    # it has not departed yet.
+                    if not train.departed and (origin.train_in_station_if_not_departed or origin.departure_platform_has_changed):
+                        if dt > origin.scheduled_departure_datetime:
+                            delay = f'{RED}Non partito{RESET}'
+                        else:
+                            delay = f'Non partito'
+                    if not train.departed and (stop.train_in_station_if_not_departed or stop.departure_platform_has_changed):
+                        if dt > stop.scheduled_departure_datetime:
+                            delay = f'{RED}In stazione{RESET}'
+                        else:
+                            delay = f'In stazione'
 
                 # Departure platform relative to the selected station
-                train.departure_platform = stop.getDeparturePlatform()
+                if stop.departure_platform_has_changed:
+                    departure_platform = f'{BLUE}{
+                        stop.actual_departure_platform}{RESET}'
+                else:
+                    departure_platform = stop.actual_departure_platform
 
-                # Try to get the delay from the stop.
-                # If it's not available, use the one from the journey
-                delay = stop.delay or journey.delay
-                delay_text = f'{RED if delay > 0 else GREEN}{
-                    delay:+} min{RESET}' if delay else ''
-
-                table.add_row([f'{train.category} {train.number}',
+                table.add_row([train,
                                train.destination,
-                               train.departure_time,
-                               delay_text,
-                               train.departure_platform or ''])
+                               train.departure_time.strftime('%H:%M'),
+                               delay,
+                               departure_platform])
 
             print(table)
 
-    def showArrivals(self, date=None) -> None:
+    def showArrivals(self, dt: datetime) -> None:
         """Prints the departures from the station.
 
         Gets the actual delay and platform by querying the API (andamentoTreno) for each train.
         """
-        arrivals = [Train(d) for d in self.getArrivals(date)]
         print(f'{BOLD}Arrivi a {self.name}{RESET}')
 
-        table = PrettyTable()
-        # Provenienza is the origin station, Arrivo is the arrival time
-        table.field_names = ['Treno', 'Provenienza',
-                             'Arrivo', 'Ritardo', 'Binario']
-
-        if (len(arrivals) == 0):
+        arrivals = self.getArrivals(dt)
+        if not arrivals:
             print('Nessun treno in arrivo')
             return
 
-        with ThreadPoolExecutor(len(arrivals)) as pool:
-            futures = pool.map(Journey.fromTrain, arrivals)
-            for (train, journey) in zip(arrivals, futures, strict=True):
-                # Number changes are returned by andamentoTreno()
-                # partenze() only says if the train has changed number
-                train.numbers = journey.train_numbers
+        table = PrettyTable()
+        table.field_names = ['Treno', 'Provenienza',
+                             'Arrivo', 'Ritardo', 'Binario']
 
-                # Get info relative to the selected station
-                stop = next(s for s in journey.stops if s.id == self.id)
+        with ThreadPoolExecutor(len(arrivals)) as pool:
+            # Calls Train(d) for each d in arrivals where d is JSON data
+            futures = pool.map(Train, arrivals)
+
+            for train in futures:
+                minutes = int(train.delay.total_seconds() // 60)
+                if minutes > 0:
+                    delay = f'{RED}{minutes:+} min{RESET}'
+                elif minutes < 0:
+                    delay = f'{GREEN}{minutes:+} min{RESET}'
+                else:
+                    if train.departed:
+                        delay = 'In orario'
+                    else:
+                        delay = 'Not enough data'
+
+                if train.no_data:
+                    table.add_row([f'{YELLOW}{train}{RESET}',
+                                   f'{YELLOW}{train.provenance}{RESET}',
+                                   f'{YELLOW}{train.arrival_time.strftime('%H:%M')}{
+                        RESET}',
+                        f'{YELLOW}{delay}{RESET}',
+                        f'{YELLOW}No real-time info{RESET}'])
+                    continue
+
+                ### Update values with better data ###
+
+                # Select the current station
+                for s in train.stops:
+                    if s.id == train.origin_station.id:
+                        origin: Stop = s
+                    if s.id == self.id:
+                        stop: Stop = s
+
+                if train.delay == timedelta(minutes=0):
+                    if not train.departed and (origin.train_in_station_if_not_departed or origin.departure_platform_has_changed):
+                        if dt > origin.scheduled_departure_datetime:
+                            delay = f'{RED}Non partito{RESET}'
+                        else:
+                            delay = f'Non partito'
 
                 # Arrival platform relative to the selected station
-                train.arrival_platform = stop.getArrivalPlatform()
+                if stop.arrival_platform_has_changed:
+                    arrival_platform = f'{BLUE}{
+                        stop.actual_arrival_platform}{RESET}'
+                else:
+                    arrival_platform = stop.actual_arrival_platform
 
-                # Try to get the delay from the stop.
-                # If it's not available, use the one from the journey
-                delay = stop.delay or journey.delay
-                delay_text = f'{RED if delay > 0 else GREEN}{
-                    delay:+} min{RESET}' if delay else ''
-
-                table.add_row([f'{train.category} {train.number}',
-                               train.origin,
-                               train.arrival_time,
-                               delay_text,
-                               train.arrival_platform or ''])
+                table.add_row([train,
+                               train.provenance,
+                               train.arrival_time.strftime('%H:%M'),
+                               delay,
+                               arrival_platform])
 
             print(table)
 
-    def showJourneySolutions(self, other, time=None) -> None:
-        solutions = self.getJourneySolutions(other, time)
+    def showJourneySolutions(self, other: 'Station', dt: datetime) -> None:
+        solutions = self.getJourneySolutions(other, dt)
         print(
             f'{BOLD}Soluzioni di viaggio da {self.name} a {other.name}{RESET}')
         for solution in solutions['soluzioni']:
-            # TODO: create a proper Duration
-            total_duration = solution['durata'].lstrip('0').replace(':', 'h')
+            # TODO: create a proper Duration and calculate the total duration since the one in the response may be wrong
+            # total_duration = solution['durata'].lstrip('0').replace(':', 'h')
             for vehicle in solution['vehicles']:
                 # Note: this field is empty in andamentoTreno, while "categoria" isn't
                 # andamentoTreno has the field compNumeroTreno. I have to check whether that's always true and what's there when a train has multiple numbers
@@ -434,15 +535,13 @@ class Station:
                     change = Duration(od - oa)
                     print(
                         f'Cambio a {vehicle["destinazione"]} [{change}]')
-            print("Durata totale:", total_duration)
             print()
 
 
 class Stats:
     def __init__(self) -> None:
-        self.datetime: datetime = datetime.now(UTC)
-        timestamp: msSinceEpoch = int(
-            self.datetime.timestamp() * 1000)
+        self.dt: datetime = datetime.now(UTC)
+        timestamp = int(self.dt.timestamp() * 1000)
         data = statistiche(timestamp)
         self.trains_today: int = data['treniGiorno']
         self.trains_now: int = data['treniCircolanti']
@@ -452,14 +551,13 @@ class Stats:
             f'Numero treni in circolazione da mezzanotte: {
                 self.trains_today}\n'
             f'Numero treni in circolazione ora: {self.trains_now}\n'
-            f'{DIM}Ultimo aggiornamento: {self.datetime.astimezone().strftime("%T")}{
+            f'{DIM}Ultimo aggiornamento: {self.dt.astimezone().strftime("%T")}{
                 RESET}'
         )
 
 
 if __name__ == "__main__":
-    ap = ArgumentParser(
-        description='Get information about trains in Italy')
+    ap = ArgumentParser(description='Get information about trains in Italy')
 
     ap.add_argument('-v', '--version', action='version',
                     version='%(prog)s 0.1')
@@ -469,26 +567,57 @@ if __name__ == "__main__":
                     type=str, help='show arrivals to a station')
     ap.add_argument('-s', '--solutions', metavar=('DEPARTURE', 'ARRIVAL'),
                     type=str, nargs=2, help='show journey solutions from DEPARTURE to ARRIVAL')
-    ap.add_argument('-t', '--time', help='time to use for the other actions')
+    ap.add_argument(
+        '--date', metavar="YYYY-MM-DD", type=str, help='date to use for the other actions; defaults to today')
+    ap.add_argument(
+        '--time', metavar="HH:MM", type=str, help='time to use for the other actions; defaults to now')
     ap.add_argument('--stats', action=BooleanOptionalAction,
                     help='show/don\'t show stats (defaults to True)', default=True)
+    ap.add_argument('--log-level', metavar='LEVEL', type=str,
+                    help='set the logging level (defaults to WARNING)', default='WARNING')
 
-    ap.epilog = 'Departures and arrivals show trains from/to the selected station in a range from 15 minutes before to 90 minutes after the selected time. If no time is specified, the current time is used.'
+    ap.epilog = 'Departures and arrivals show trains from/to the selected station in a range from 15 minutes before to 90 minutes after the selected time.'
 
     args = ap.parse_args()
+
+    # Check if the log level is valid
+    if (args.log_level not in ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')):
+        print(
+            f'Invalid log level: {RED}{args.log_level}{RESET} '
+            '(valid values are: DEBUG, INFO, WARNING, ERROR, CRITICAL).'
+        )
+
+        exit(1)
+
+    logging.basicConfig(level=args.log_level)
 
     if (args.stats):
         print(Stats())
 
+    if (args.date):
+        search_date = datetime.strptime(
+            args.date, '%Y-%m-%d').astimezone().date()
+    else:
+        search_date = datetime.now(UTC).date()
+
+    if (args.time):
+        search_time = datetime.strptime(
+            args.time, '%H:%M').astimezone().timetz()
+    else:
+        search_time = datetime.now(UTC).timetz()
+
+    search_datetime = datetime.combine(search_date, search_time)
+
     if (args.departures):
         station = Station(args.departures)
-        station.showDepartures()
+        station.showDepartures(search_datetime)
 
     if (args.arrivals):
         station = Station(args.arrivals)
-        station.showArrivals()
+        station.showArrivals(search_datetime)
 
     if (args.solutions):
         departure_station = Station(args.solutions[0])
         arrival_station = Station(args.solutions[1])
-        departure_station.showJourneySolutions(arrival_station, args.time)
+        departure_station.showJourneySolutions(
+            arrival_station, search_datetime)
