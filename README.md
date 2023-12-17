@@ -124,12 +124,16 @@ La risposta di `andamentoTreno` è l'oggetto che segue (non completo), i cui cam
             "arrivo_teorico": "timestamp arrivo teorico",
             "partenzaReale": "timestamp partenza reale",
             "arrivoReale": "timestamp arrivo reale",
+            "ritardo": "ritardo in minuti",
+            "ritardoPartenza": "ritardo in minuti",
+            "ritardoArrivo": "ritardo in minuti",
             "tipoFermata": "può essere P, F o A"
         }
     ],
 
     "compDurata": "durata del viaggio dalla stazione di partenza a quella di arrivo",
-    "idOrigine": "id della stazione di origine"
+    "idOrigine": "id della stazione di origine",
+    "ritardo", "ritardo in minuti",
 }
 ```
 
@@ -138,6 +142,8 @@ Il formato di compDurata è `h:m`, ad esempio `1:6` (1 ora e 6 minuti).
 Inoltre potrebbe essere sbagliato, ad esempio su tratte di durata superiore a 24 ore.
 
 Si noti che i treni che cambiano numero sono lo stesso treno. Anche se il numero cambia in una certa stazione, la stazione di origine del treno è la stessa.
+
+In `fermate`, il campo `ritardo` ha il valore di `ritardoPartenza` se `tipoFermata` è `P` (ovvero se la "fermata" è la stazione di partenza del treno), di `ritardoArrivo` altrimenti.
 
 Di seguito la tabella dei codici delle regioni:
 
