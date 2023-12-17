@@ -8,11 +8,16 @@ Esploriamo le [API di ViaggiaTreno][API]. Le richieste sono tutte di tipo GET e 
 
 ### Ricerca stazione
 
-Quando cerchiamo informazioni su una stazione, vogliamo vedere quali sono i treni in partenza e in arrivo (numero treno e stazione di arrivo/di partenza), da dove quale binario partono e se sono in ritardo.
+Quando cerchiamo informazioni su una stazione, vogliamo vedere quali sono i treni in partenza e in arrivo (numero treno e stazione di arrivo/di partenza), da quale binario partono e se sono in ritardo.
 
 Per fare ciò, possiamo digitare le prime lettere della stazione e ottenere una lista di stazioni che iniziano con quelle lettere tramite l'endpoint `autocompletaStazione`.
 Una volta scelta la stazione, chiamiamo `partenze` o `arrivi` con l'orario che ci interessa.
-Il risultato di queste chiamate dovrebbero bastare per ottenere le informazioni che ci interessano, ma il campo `ritardo` (espresso in minuti) non sembra essere affidabile. Possiamo verificare lo stato effettivo del treno chiamando `andamentoTreno`, che ci darà anche informazioni sul suo itinerario.
+Il risultato di queste chiamate dovrebbe bastare per ottenere le informazioni che ci interessano, ma il campo `ritardo` (espresso in minuti) non sembra essere affidabile.
+
+Possiamo verificare lo stato effettivo del treno chiamando `andamentoTreno`, che ci darà anche informazioni sul suo itinerario. Qui campo `ritardo` è più affidabile, anche se bisognerebbe confrontare quello riportato "ad alto livello" con quello riportato per ogni fermata. Per ogni fermata dell'itinerario abbiamo a disposizone (non sempre ovviamente) il binario e gli orari. Possiamo quindi fornire più informazioni, ad esempio controllando se un treno che sarebbe dovuto partire da un'altra stazione è effettivamente partito o meno.
+
+Dovrei controllare se le informazioni relative ai binari riportate da `partenze` e `arrivi` sono affidabili; al momento, nel dubbio, uso quelle riportate da `andamentoTreno`.
+Dovrei anche controllare se è possibile capire se un treno è partito dalla sua stazione di partenza senza scorrere tutte le fermate.
 
 ### Ricerca itinerario
 
@@ -20,11 +25,11 @@ Prendiamo il treno per andare da un posto all'altro. Ci affidiamo a ViaggiaTreno
 
 Selezioniamo la stazione di partenza e quella di arrivo: chiamiamo `autocompletaStazione` (ci servono i codici delle stazioni di partenza e di arrivo) e scegliamo un orario.
 Cerchiamo un itinerario con `soluzioniViaggioNew` e scegliamo quello che ci interessa.
-Vediamo per quali stazioni passa il treno, a che binario si ferma e se è in ritardo (forse lo vediamo anche da `soluzioniViaggioNew`, devo verificare) chiamando `andamentoTreno`.
+Vediamo per quali stazioni passa il treno, a che binario si ferma e se è in ritardo (forse lo vediamo anche da `soluzioniViaggioNew`, devo verificare) chiamando `andamentoTreno`. Tutto molto bello ma ancora in fase di sviluppo.
 
 ## Possibili *endpoint*
 
-Quelli che chiamo paramatri vanno aggiunti dopo l'endpoint, separati da un `/`. Per comodità, uso la notazione funzionale.
+Quelli che chiamo "parametri" vanno aggiunti dopo l'endpoint, separati da un `/`. Per comodità, uso la notazione funzionale. Sono riportati sono gli endpoint che mi interessano.
 
 | Endpoint | Descrizione parametri | Risposta |
 | -------- | --------- | -------- |
@@ -81,11 +86,13 @@ Chiamando `partenze`, abbiamo i seguenti campi di interesse:
     "binarioProgrammatoPartenzaDescrizione": "binario programmato",
     "binarioEffettivoPartenzaDescrizione": "binario effettivo",
     "destinazione": "nome testuale della destinazione del treno",
-    "dataPartenzaTreno": "data di partenza in millisecondi dalla Epoch"
+    "dataPartenzaTreno": "data di partenza in millisecondi dalla Epoch",
+    "codOrigine": "id della stazione di origine",
+    "ritardo": "ritardo in minuti (spesso a 0 quando il treno è in ritardo, usare quello di andamentoTreno)",
 }
 ```
 
-La risposta di `andamentoTreno` è l'oggetto che segue, i cui campi si riferiscono alla tratta nel complesso:
+La risposta di `andamentoTreno` è l'oggetto che segue (non completo), i cui campi si riferiscono alla tratta nel complesso. È un'estensione dell'oggetto ritornato da `partenze`/`arrivi`:
 
 ```jsonc
 {
@@ -100,6 +107,7 @@ La risposta di `andamentoTreno` è l'oggetto che segue, i cui campi si riferisco
     "stazioneUltimoRilevamento": "nome stazione ultimo rilevamento",
 
     // Cambi numerazione del treno
+    "haCambiNumero": "true o false, ma non c'è da fidarsi perché è sempre a false",
     "cambiNumero": [
         {
             "nuovoNumeroTreno": "nuovo numero del treno",
@@ -120,16 +128,16 @@ La risposta di `andamentoTreno` è l'oggetto che segue, i cui campi si riferisco
         }
     ],
 
-    // Formato: h:m, ad esempio 1:6 (1 ora e 6 minuti)
-    // Poco utile perché si riferisce al viaggio nel complesso, non alle tratte
-    // singole che lo compongono (es. Milano-Genova e non Pavia-Tortona)
     "compDurata": "durata del viaggio dalla stazione di partenza a quella di arrivo",
+    "idOrigine": "id della stazione di origine"
 }
 ```
 
-The object returned by `andamentoTreno` "extends" the object returned by `partenze`.
-They have a `binarioProgrammatoPartenzaCodice` field.
-A value of `"0"` might mean that the train is in the station.
+Il formato di compDurata è `h:m`, ad esempio `1:6` (1 ora e 6 minuti).
+È poco utile perché si riferisce al viaggio nel complesso, non alle tratte singole che lo compongono (es. Milano-Genova e non Pavia-Tortona).
+Inoltre potrebbe essere sbagliato, ad esempio su tratte di durata superiore a 24 ore.
+
+Si noti che i treni che cambiano numero sono lo stesso treno. Anche se il numero cambia in una certa stazione, la stazione di origine del treno è la stessa.
 
 Di seguito la tabella dei codici delle regioni:
 
@@ -159,6 +167,6 @@ Di seguito la tabella dei codici delle regioni:
 | 21     | Provincia autonoma di Treno   |
 | 22     | Provincia autonoma di Bolzano |
 
-Il Trentino-Alto Adige (9) non è da usare con `datiMeteo`: non è mappata correttamente da [viaggiatreno.it][VT].
+Il Trentino-Alto Adige (9) non è da usare con l'endpoint `datiMeteo`: non è mappata correttamente da [viaggiatreno.it][VT].
 
 [VT]: http://www.viaggiatreno.it (Viaggia Treno)
