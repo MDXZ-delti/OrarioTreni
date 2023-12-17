@@ -48,7 +48,7 @@ WHITE_BG = "\x1b[47m"
 
 CET = timezone(timedelta(seconds=3600), 'CET')
 
-regions = {
+regions: dict[int, str] = {
     0: "Italia",
     1: "Lombardia",
     2: "Liguria",
@@ -102,7 +102,7 @@ def statistiche(timestamp: int):
     return get("statistiche", timestamp)
 
 
-def autocompletaStazione(text: str):
+def autocompletaStazione(text: str) -> str | None:
     return get("autocompletaStazione", text)
 
 
@@ -114,7 +114,7 @@ def dettaglioStazione(codiceStazione: str, codiceRegione: int):
     return get("dettaglioStazione", codiceStazione, codiceRegione)
 
 
-def regione(codiceStazione: str):
+def regione(codiceStazione: str) -> int | None:
     return get("regione", codiceStazione)
 
 
