@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+__version__ = '0.1'
+__author__ = 'Matteo Delton'
+
 import json
 import logging
 from argparse import ArgumentParser, BooleanOptionalAction
@@ -13,71 +16,71 @@ from prettytable import PrettyTable
 
 # TODO:
 # - Handle the case where the train does not have all the stops (e.g. Saronno)
-# - Add "trip duration" (both scheduled and estimated); it has to be calculated
+# - Add 'trip duration' (both scheduled and estimated); it has to be calculated
 
-CLEAR = "\x1b[2J"
+CLEAR = '\x1b[2J'
 
-RESET = "\x1b[0m"
-BOLD = "\x1b[1m"
-DIM = "\x1b[2m"
-UNDERSCORE = "\x1b[4m"
-BLINK = "\x1b[5m"
-REVERSE = "\x1b[7m"
-HIDDEN = "\x1b[8m"
-STRIKETHROUGH = "\x1b[9m"
+RESET = '\x1b[0m'
+BOLD = '\x1b[1m'
+DIM = '\x1b[2m'
+UNDERSCORE = '\x1b[4m'
+BLINK = '\x1b[5m'
+REVERSE = '\x1b[7m'
+HIDDEN = '\x1b[8m'
+STRIKETHROUGH = '\x1b[9m'
 
-BLACK = "\x1b[30m"
-RED = "\x1b[31m"
-GREEN = "\x1b[32m"
-YELLOW = "\x1b[33m"
-BLUE = "\x1b[34m"
-MAGENTA = "\x1b[35m"
-CYAN = "\x1b[36m"
-WHITE = "\x1b[37m"
+BLACK = '\x1b[30m'
+RED = '\x1b[31m'
+GREEN = '\x1b[32m'
+YELLOW = '\x1b[33m'
+BLUE = '\x1b[34m'
+MAGENTA = '\x1b[35m'
+CYAN = '\x1b[36m'
+WHITE = '\x1b[37m'
 # Custom color with \x1B[38;2;R;G;Bm
 
-BLACK_BG = "\x1b[40m"
-RED_BG = "\x1b[41m"
-GREEN_BG = "\x1b[42m"
-YELLOW_BG = "\x1b[43m"
-BLUE_BG = "\x1b[44m"
-MAGENTA_BG = "\x1b[45m"
-CYAN_BG = "\x1b[46m"
-WHITE_BG = "\x1b[47m"
+BLACK_BG = '\x1b[40m'
+RED_BG = '\x1b[41m'
+GREEN_BG = '\x1b[42m'
+YELLOW_BG = '\x1b[43m'
+BLUE_BG = '\x1b[44m'
+MAGENTA_BG = '\x1b[45m'
+CYAN_BG = '\x1b[46m'
+WHITE_BG = '\x1b[47m'
 # Custom background color with \x1B[48;2;R;G;Bm
 
 CET = timezone(timedelta(seconds=3600), 'CET')
 
 regions: dict[int, str] = {
-    0: "Italia",
-    1: "Lombardia",
-    2: "Liguria",
-    3: "Piemonte",
-    4: "Valle d'Aosta",
-    5: "Lazio",
-    6: "Umbria",
-    7: "Molise",
-    8: "Emilia Romagna",
-    9: "Trentino-Alto Adige",
-    10: "Friuli-Venezia Giulia",
-    11: "Marche",
-    12: "Veneto",
-    13: "Toscana",
-    14: "Sicilia",
-    15: "Basilicata",
-    16: "Puglia",
-    17: "Calabria",
-    18: "Campania",
-    19: "Abruzzo",
-    20: "Sardegna",
-    21: "Provincia autonoma di Treno",
-    22: "Provincia autonoma di Bolzano"
+    0: 'Italia',
+    1: 'Lombardia',
+    2: 'Liguria',
+    3: 'Piemonte',
+    4: 'Valle d\'Aosta',
+    5: 'Lazio',
+    6: 'Umbria',
+    7: 'Molise',
+    8: 'Emilia Romagna',
+    9: 'Trentino-Alto Adige',
+    10: 'Friuli-Venezia Giulia',
+    11: 'Marche',
+    12: 'Veneto',
+    13: 'Toscana',
+    14: 'Sicilia',
+    15: 'Basilicata',
+    16: 'Puglia',
+    17: 'Calabria',
+    18: 'Campania',
+    19: 'Abruzzo',
+    20: 'Sardegna',
+    21: 'Provincia autonoma di Treno',
+    22: 'Provincia autonoma di Bolzano'
 }
 
 
 def get(method: str, *params):
     """call the ViaggiaTreno API with the given method and parameters."""
-    base_url = "http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno"
+    base_url = 'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno'
     url = f'{base_url}/{method}/{"/".join(str(p) for p in params)}'
 
     r = requests.get(url)
@@ -91,7 +94,7 @@ def get(method: str, *params):
             r.headers['Date'], '%a, %d %b %Y %H:%M:%S %Z').strftime('%Y-%j %X')
         filename = f'{dt} {method}({", ".join(str(p) for p in params)})'
         Path('responses').mkdir(parents=True, exist_ok=True)
-        with open(f"responses/{filename}.json", "w") as f:
+        with open(f'responses/{filename}.json', 'w') as f:
             json.dump(r.json(), f, indent=2)
             f.write('\n')
 
@@ -99,43 +102,43 @@ def get(method: str, *params):
 
 
 def statistiche(timestamp: int):
-    return get("statistiche", timestamp)
+    return get('statistiche', timestamp)
 
 
-def autocompletaStazione(text: str) -> str | None:
-    return get("autocompletaStazione", text)
+def autocompleta_stazione(text: str) -> str | None:
+    return get('autocompletaStazione', text)
 
 
-def cercaStazione(text: str):
-    return get("cercaStazione", text)
+def cerca_stazione(text: str):
+    return get('cercaStazione', text)
 
 
-def dettaglioStazione(codiceStazione: str, codiceRegione: int):
-    return get("dettaglioStazione", codiceStazione, codiceRegione)
+def dettaglio_stazione(codiceStazione: str, codiceRegione: int):
+    return get('dettaglioStazione', codiceStazione, codiceRegione)
 
 
 def regione(codiceStazione: str) -> int | None:
-    return get("regione", codiceStazione)
+    return get('regione', codiceStazione)
 
 
 def partenze(codiceStazione: str, orario: str):
     # orario's format is '%a %b %d %Y %H:%M:%S GMT%z (%Z)'
-    return get("partenze", codiceStazione, orario)
+    return get('partenze', codiceStazione, orario)
 
 
 def arrivi(codiceStazione: str, orario: str):
     # orario's format is '%a %b %d %Y %H:%M:%S GMT%z (%Z)'
-    return get("arrivi", codiceStazione, orario)
+    return get('arrivi', codiceStazione, orario)
 
 
-def andamentoTreno(codOrigine: str, numeroTreno: int, dataPartenza: int):
+def andamento_treno(codOrigine: str, numeroTreno: int, dataPartenza: int):
     # dataPartenza is in ms sine the Epoch
-    return get("andamentoTreno", codOrigine, numeroTreno, dataPartenza)
+    return get('andamentoTreno', codOrigine, numeroTreno, dataPartenza)
 
 
-def soluzioniViaggioNew(codLocOrig: str, codLocDest: str, date: str):
-    # date's format is "%FT%T" and station codes don't have the starting 'S'
-    return get("soluzioniViaggioNew", codLocOrig, codLocDest, date)
+def soluzioni_viaggio(codLocOrig: str, codLocDest: str, date: str):
+    # date's format is '%FT%T' and station codes don't have the starting 'S'
+    return get('soluzioniViaggioNew', codLocOrig, codLocDest, date)
 
 
 class Duration(timedelta):
@@ -193,18 +196,17 @@ class Train:
         ### andamentoTreno() data ###
         #############################
 
-        at_data = andamentoTreno(
+        at_data = andamento_treno(
             data['codOrigine'], data['numeroTreno'], data['dataPartenzaTreno'])
 
         # If this happens, viaggiatreno.it is not provinding real-time data
-        # Now I have to change everything, fuck me
         self.no_data = False
-        if (not at_data):
+        if (at_data is None):
             print(
-                f"Trenitalia non sta fornendo dati in tempo reale per il treno {
-                    self}\n"
-                f"Parametri richiesta andamentoTreno: {
-                    data['codOrigine']}/{data['numeroTreno']}/{data['dataPartenzaTreno']}"
+                f'Trenitalia non sta fornendo dati in tempo reale per il treno {
+                    self}\n'
+                f'Parametri richiesta andamentoTreno: {
+                    data["codOrigine"]}/{data["numeroTreno"]}/{data["dataPartenzaTreno"]}'
             )
             self.no_data = True
             return
@@ -216,7 +218,7 @@ class Train:
             self.last_update: datetime = datetime.fromtimestamp(
                 at_data['oraUltimoRilevamento'] / 1000)
 
-        # It might not be an actual station (e.g. "bivio"), but I'm not sure
+        # It might not be an actual station (e.g. 'bivio'), but I'm not sure
         self.last_update_station: str = at_data['stazioneUltimoRilevamento']
 
         ### Update values with better data ###
@@ -284,7 +286,7 @@ class Stop:
         self.dep_platform_confirmed: bool = self.actual_dep_platform is not None
 
         if self.actual_dep_platform is None and self.scheduled_dep_platform is None:
-            self.actual_dep_platform = "N/A"
+            self.actual_dep_platform = 'N/A'
 
         if self.actual_dep_platform is None:
             self.actual_dep_platform = self.scheduled_dep_platform
@@ -297,7 +299,7 @@ class Stop:
         self.arr_platform_confirmed: bool = self.actual_arr_platform is not None
 
         if self.actual_arr_platform is None and self.scheduled_arr_platform is None:
-            self.actual_arr_platform = "N/A"
+            self.actual_arr_platform = 'N/A'
 
         if self.actual_arr_platform is None:
             self.actual_arr_platform = self.scheduled_arr_platform
@@ -316,13 +318,13 @@ class Station:
             self.name: str = partialName
             return
 
-        r = cercaStazione(partialName)
+        r = cerca_stazione(partialName)
 
-        if (len(r) == 0):
+        if not r:
             print('Nessuna stazione trovata')
             return
 
-        # TODO: let the user choose the station (e.g. "Ancona")
+        # TODO: let the user choose the station (e.g. 'Ancona')
         if (len(r) == 1) or (partialName.upper() in (station['nomeLungo'] for station in r)):
             self.name = str(r[0]['nomeLungo'])
             self.id = str(r[0]['id'])
@@ -346,7 +348,7 @@ class Station:
         return arrivi(self.id, dt.strftime('%a %b %d %Y %H:%M:%S GMT%z (%Z)'))
 
     def get_journey_solutions(self, other: 'Station', dt: datetime):
-        return soluzioniViaggioNew(self.id[1:], other.id[1:], dt.strftime('%FT%T'))
+        return soluzioni_viaggio(self.id[1:], other.id[1:], dt.strftime('%FT%T'))
 
     def show_departures(self, dt: datetime) -> None:
         """Prints the departures from the station.
@@ -399,9 +401,9 @@ class Station:
                         stop: Stop = s
 
                 if train.delay == timedelta(minutes=0):
-                    # Those two are basically the same. "In stazione" means that
+                    # Those two are basically the same. 'In stazione' means that
                     # the train is in the station from which showDepartures() is
-                    # called and it has not departed yet. "Non partito" means
+                    # called and it has not departed yet. 'Non partito' means
                     # that the train is in the station from which it departs and
                     # it has not departed yet.
                     if not train.departed and (origin.dep_platform_confirmed or origin.dep_platform_has_changed):
@@ -421,7 +423,7 @@ class Station:
                     dep_platform = f'{MAGENTA}{
                         stop.actual_dep_platform}{RESET}'
                 else:
-                    if (stop.dep_platform_confirmed):
+                    if stop.dep_platform_confirmed:
                         dep_platform = f'{
                             BLUE}{stop.actual_dep_platform}{RESET}'
                     else:
@@ -486,7 +488,7 @@ class Station:
                         stop: Stop = s
 
                 if train.delay == timedelta(minutes=0):
-                    if not train.departed and (origin.dep_platform_confirmed or origin.dep_platform_has_changed):
+                    if (not train.departed and (origin.dep_platform_confirmed or origin.dep_platform_has_changed)):
                         if dt > origin.scheduled_dep_datetime:
                             delay = f'{RED}Non partito{RESET}'
                         else:
@@ -518,9 +520,13 @@ class Station:
         for sol in solutions['soluzioni']:
             # TODO: create a proper Duration and calculate the total duration since the one in the response may be wrong
             # total_duration = solution['durata'].lstrip('0').replace(':', 'h')
-            for vehicle in sol['vehicles']:
-                # Note: this field is empty in andamentoTreno, while "categoria" isn't
-                # andamentoTreno has the field compNumeroTreno. I have to check whether that's always true and what's there when a train has multiple numbers
+            vehicles = sol['vehicles']
+            for vehicle in vehicles:
+                # Note: this field is empty in andamentoTreno, while
+                # 'categoria' isn't.
+                # andamentoTreno has the field compNumeroTreno.
+                # I have to check whether that's always true and what's
+                # there when a train has multiple numbers
                 category = vehicle['categoriaDescrizione']
                 number = vehicle['numeroTreno']
                 dep_time_dt = datetime.fromisoformat(vehicle['orarioPartenza'])
@@ -534,16 +540,14 @@ class Station:
                     f'{dep_time}–{arr_time} ({category}{" " if category else ""}{number}) [{duration}]')
 
                 # Print a train change if present
-                if (vehicle is not sol['vehicles'][-1]):
-                    next_vehicle = sol['vehicles'][sol['vehicles'].index(
-                        vehicle) + 1]
-                    oa = datetime.fromisoformat(
+                if vehicle is not vehicles[-1]:
+                    next_vehicle = vehicles[vehicles.index(vehicle) + 1]
+                    vehicle_arr_time = datetime.fromisoformat(
                         vehicle['orarioArrivo'])
-                    od = datetime.fromisoformat(
+                    next_vehicle_dep_time = datetime.fromisoformat(
                         next_vehicle['orarioPartenza'])
-                    change = Duration(od - oa)
-                    print(
-                        f'Cambio a {vehicle["destinazione"]} [{change}]')
+                    change = Duration(next_vehicle_dep_time - vehicle_arr_time)
+                    print(f'Cambio a {vehicle["destinazione"]} [{change}]')
             print()
 
 
@@ -565,11 +569,11 @@ class Stats:
         )
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     ap = ArgumentParser(description='Get information about trains in Italy')
 
     ap.add_argument('-v', '--version', action='version',
-                    version='%(prog)s 0.1')
+                    version=f'%(prog)s {__version__}')
     ap.add_argument('-d', '--departures', metavar='STATION',
                     type=str, help='show departures from a station')
     ap.add_argument('-a', '--arrivals', metavar='STATION',
@@ -585,12 +589,16 @@ if __name__ == "__main__":
     ap.add_argument('--log-level', metavar='LEVEL', type=str,
                     help='set the logging level (defaults to WARNING)', default='WARNING')
 
-    ap.epilog = 'Departures and arrivals show trains from/to the selected station in a range from 15 minutes before to 90 minutes after the selected time.'
+    ap.epilog = (
+        'Departures and arrivals show trains from/to'
+        'the selected station in a range from 15 minutes before'
+        'to 90 minutes after the selected time.'
+    )
 
     args = ap.parse_args()
 
     # Check if the log level is valid
-    if (args.log_level not in ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')):
+    if args.log_level not in ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'):
         print(
             f'Invalid log level: {RED}{args.log_level}{RESET} '
             '(valid values are: DEBUG, INFO, WARNING, ERROR, CRITICAL).'
@@ -600,32 +608,30 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=args.log_level)
 
-    if (args.stats):
+    if args.stats:
         print(Stats())
 
-    if (args.date):
-        search_date = datetime.strptime(
-            args.date, '%Y-%m-%d').astimezone().date()
+    if args.date:
+        date_ = datetime.strptime(args.date, '%Y-%m-%d').astimezone().date()
     else:
-        search_date = datetime.now(UTC).date()
+        date_ = datetime.now(UTC).date()
 
-    if (args.time):
-        search_time = datetime.strptime(
-            args.time, '%H:%M').astimezone().timetz()
+    if args.time:
+        time_ = datetime.strptime(args.time, '%H:%M').astimezone().timetz()
     else:
-        search_time = datetime.now(UTC).timetz()
+        time_ = datetime.now(UTC).timetz()
 
-    search_datetime = datetime.combine(search_date, search_time)
+    datetime_ = datetime.combine(date_, time_)
 
-    if (args.departures):
+    if args.departures:
         station = Station(args.departures)
-        station.show_departures(search_datetime)
+        station.show_departures(datetime_)
 
-    if (args.arrivals):
+    if args.arrivals:
         station = Station(args.arrivals)
-        station.show_arrivals(search_datetime)
+        station.show_arrivals(datetime_)
 
-    if (args.solutions):
+    if args.solutions:
         dep_station = Station(args.solutions[0])
         arr_station = Station(args.solutions[1])
-        dep_station.show_journey_solutions(arr_station, search_datetime)
+        dep_station.show_journey_solutions(arr_station, datetime_)
