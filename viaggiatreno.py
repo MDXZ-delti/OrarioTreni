@@ -1,7 +1,7 @@
 import json
 import logging
 from csv import DictWriter
-from datetime import UTC, date, datetime, time
+from datetime import date, datetime, time
 from pathlib import Path
 
 import requests
@@ -41,6 +41,7 @@ class ViaggiaTreno:
         """call the ViaggiaTreno API with the given method and parameters."""
 
         url = f'{self.BASE_URL}/{method}/{"/".join(str(p) for p in params)}'
+        print(url)
 
         r = requests.get(url)
 
@@ -64,32 +65,14 @@ class ViaggiaTreno:
         """Return the departures from the given station at the given time.
         If the time is naive, it is assumed to be in the local timezone.
         """
-
-        # Maybe time zones are not needed at all, or they CAN be read
-        # but are not required (in that case, the API would assume the
-        # Rome time zone)
-        if dt.tzinfo is None:
-            dt = dt.astimezone()
-
-        dep_time = dt.strftime('%a %b %d %Y %H:%M:%S UTC%z')
-
+        dep_time = dt.strftime('%a %b %d %Y %H:%M:%S')
         return self._get('partenze', codiceStazione, dep_time)
 
     def arrivals(self, codiceStazione: str, dt: datetime):
         """Return the arrivals from the given station at the given time.
         If the time is naive, it is assumed to be in the local timezone.
         """
-
-        # Maybe time zones are not needed at all, or they CAN be read
-        # but are not required (in that case, the API would assume the
-        # Rome time zone). The API accepts the name of the time zone
-        # (e.g. Central European Time) in parentheses, at the end of
-        # the string, but it seems to ignore it.
-        if dt.tzinfo is None:
-            dt = dt.astimezone()
-
-        arr_time = dt.strftime('%a %b %d %Y %H:%M:%S UTC%z')
-
+        arr_time = dt.strftime('%a %b %d %Y %H:%M:%S')
         return self._get('arrivi', codiceStazione, arr_time)
 
     def tratte_canvas(self, codiceOrigine, numeroTreno, dataPartenza):
@@ -191,17 +174,13 @@ class ViaggiaTreno:
         pass
         return self._get('dettaglioProgrammaOrario', dataDa, dataA, idStazionePartenza, idStazioneArrivo)
 
-    def statistics(self, dt: datetime | None = None) -> dict[str, int]:
+    def statistics(self) -> dict[str, int]:
         """Return statistics about trains.
         Even though the API requires a timestamp, it seems to ignore it and
         returns the same data regardless of the timestamp. Therefore, the
         timestamp is not required and defaults to the current time.
         """
-        if dt is None:
-            dt = datetime.now(UTC)
-
-        timestamp = int(dt.timestamp() * 1000)
-
+        timestamp = int(datetime.now().timestamp() * 1000)
         return self._get('statistiche', timestamp)
 
     def find_station(self, text: str):
@@ -224,10 +203,12 @@ class ViaggiaTreno:
 
 
 class Utils:
+    """A collection of utility functions."""
     vt = ViaggiaTreno()
 
     @classmethod
     def generate_station_database(cls):
+        """Generate a CSV file containing all the stations in Italy."""
         with open('stations.csv', 'w', newline='') as csvfile:
             fieldnames = ['short_name', 'region_code', 'station_id',
                           'long_name', 'label', 'lat', 'lon', 'station_type']

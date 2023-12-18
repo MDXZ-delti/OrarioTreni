@@ -6,7 +6,7 @@ __author__ = 'Matteo Delton'
 import logging
 from argparse import ArgumentParser, BooleanOptionalAction
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta
 
 import inquirer  # type: ignore
 from prettytable import PrettyTable
@@ -48,8 +48,6 @@ CYAN_BG = '\x1b[46m'
 WHITE_BG = '\x1b[47m'
 # Custom background color with \x1B[48;2;R;G;Bm
 
-CET = timezone(timedelta(seconds=3600), 'CET')
-
 vt = ViaggiaTreno()
 
 
@@ -78,15 +76,15 @@ class Train:
     def __init__(self, data) -> None:
         if (data['orarioPartenza'] is not None):
             dep_datetime: datetime = datetime.fromtimestamp(
-                data['orarioPartenza'] / 1000).replace(tzinfo=CET)
+                data['orarioPartenza'] / 1000)
             # TODO: check if it corresponds to data['dataPartenzaTreno']
             self.dep_date: date = dep_datetime.date()
-            self.dep_time: time = dep_datetime.timetz()
+            self.dep_time: time = dep_datetime.time()
         if (data['orarioArrivo'] is not None):
             arr_datetime: datetime = datetime.fromtimestamp(
-                data['orarioArrivo'] / 1000).replace(tzinfo=CET)
+                data['orarioArrivo'] / 1000)
             self.arr_date: date = arr_datetime.date()
-            self.arr_time: time = arr_datetime.timetz()
+            self.arr_time: time = arr_datetime.time()
 
         # TODO: check with the departure time if the train has departed
         self.provenance: str = data['origine']  # Only in arrivi
@@ -169,19 +167,19 @@ class Stop:
 
         if (data['partenza_teorica'] is not None):
             self.scheduled_dep_datetime: datetime = datetime.fromtimestamp(
-                data['partenza_teorica'] / 1000).replace(tzinfo=CET)
+                data['partenza_teorica'] / 1000)
 
         if (data['partenzaReale'] is not None):
             self.actual_dep_datetime: datetime = datetime.fromtimestamp(
-                data['partenzaReale'] / 1000).replace(tzinfo=CET)
+                data['partenzaReale'] / 1000)
 
         if (data['arrivo_teorico'] is not None):
             self.scheduled_arr_datetime: datetime = datetime.fromtimestamp(
-                data['arrivo_teorico'] / 1000).replace(tzinfo=CET)
+                data['arrivo_teorico'] / 1000)
 
         if (data['arrivoReale'] is not None):
             self.actual_arr_datetime: datetime = datetime.fromtimestamp(
-                data['arrivoReale'] / 1000).replace(tzinfo=CET)
+                data['arrivoReale'] / 1000)
 
         # TODO
         # If the previous stop has an actual arrival platform, this should be used
@@ -461,14 +459,14 @@ class Stats:
         self.trains_today: int = data['treniGiorno']
         self.trains_now: int = data['treniCircolanti']
         self.last_update: datetime = datetime.fromtimestamp(
-            data['ultimoAggiornamento'] / 1000).replace(tzinfo=CET)
+            data['ultimoAggiornamento'] / 1000)
 
     def __str__(self) -> str:
         return (
             f'Numero treni in circolazione da mezzanotte: {
                 self.trains_today}\n'
             f'Numero treni in circolazione ora: {self.trains_now}\n'
-            f'{DIM}Ultimo aggiornamento: {self.last_update.astimezone().strftime("%T")}{
+            f'{DIM}Ultimo aggiornamento: {self.last_update.strftime("%T")}{
                 RESET}'
         )
 
@@ -516,14 +514,14 @@ if __name__ == '__main__':
         print(Stats())
 
     if args.date:
-        date_ = datetime.strptime(args.date, '%Y-%m-%d').astimezone().date()
+        date_ = datetime.strptime(args.date, '%Y-%m-%d').date()
     else:
-        date_ = datetime.now(UTC).date()
+        date_ = datetime.now().date()
 
     if args.time:
-        time_ = datetime.strptime(args.time, '%H:%M').astimezone().timetz()
+        time_ = datetime.strptime(args.time, '%H:%M').time()
     else:
-        time_ = datetime.now(UTC).timetz()
+        time_ = datetime.now().time()
 
     datetime_ = datetime.combine(date_, time_)
 
