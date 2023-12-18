@@ -29,16 +29,16 @@ Vediamo per quali stazioni passa il treno, a che binario si ferma e se è in rit
 
 ## Possibili *endpoint*
 
-Quelli che chiamo "parametri" vanno aggiunti dopo l'endpoint, separati da un `/`. Per comodità, uso la notazione funzionale. Sono riportati sono gli endpoint che mi interessano.
+Quelli che chiamo "parametri" vanno aggiunti dopo l'endpoint, separati da un `/`. Per comodità, uso la notazione funzionale. Sono riportati sono gli endpoint che mi interessano. Dove è presente un asterisco, significa che ci può essere qualsiasi cosa al suo posto (a parte `/` e forse qualche altro carattere).
 
 | Endpoint | Descrizione parametri | Risposta |
 | -------- | --------- | -------- |
 | `autocompletaStazione(p)` | `p` è il nome della stazione, parziale o completo | Lista di stazioni che iniziano con `p` con relativo codice identificativo |
 | `dettaglioStazione(s, r)` | `s` è il codice della stazione, `r` è il codice della regione | Informazioni sulla stazione |
 | `regione(s)` | `s` è il codice della stazione | Codice della regione |
-| `partenze(s, t)` e `arrivi(s, t)` | `s` è il codice della stazione, `t` è l'orario nel formato `%a %b %d %Y %T GMT%z (%Z)` | Lista dei treni in partenza/in arrivo |
+| `partenze(s, t)` e `arrivi(s, t)` | `s` è il codice della stazione, `t` è l'orario nel formato `%a %b %d %Y %T` oppure `%a %b %d %Y %T UTC%z` oppure `%a %b %d %Y %T GMT%z` oppure `%a %b %d %Y %T UTC%z (*)*` oppure `%a %b %d %Y %T GMT%z (*)*` | Lista dei treni in partenza/in arrivo |
 | `andamentoTreno(s, n,  d)` | `s` è il codice della stazione di partenza, `n` è il numero del treno, `d` è la data di partenza espressa in millisecondi dalla Epoch | Informazioni sul treno |
-| `soluzioniViaggioNew(p, a, d)` | `p` ed `a` sono i codici senza la S iniziale delle stazioni di partenza e di arrivo, `d` è la data nel formato `%FT%H:%M:%S` | Lista di itinerari |
+| `soluzioniViaggioNew(p, a, d)` | `p` ed `a` sono i codici senza la S iniziale delle stazioni di partenza e di arrivo, `d` è la data nel formato `YYYY-MM-DDTHH:MM:SS*`. | Lista di itinerari |
 | `cercaNumeroTrenoTrenoAutocomplete(n)` | `n` è il numero del treno | Informazioni testuali sul treno |
 | `cercaNumeroTreno(n)` | `n` è il numero del treno | Informazioni sul treno |
 | `elencoStazioni(n)` | `n` è il codice della regione | Lista di stazioni nella regione |
