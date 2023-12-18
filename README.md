@@ -41,6 +41,7 @@ Quelli che chiamo "parametri" vanno aggiunti dopo l'endpoint, separati da un `/`
 | `soluzioniViaggioNew(p, a, d)` | `p` ed `a` sono i codici senza la S iniziale delle stazioni di partenza e di arrivo, `d` è la data nel formato `%FT%H:%M:%S` | Lista di itinerari |
 | `cercaNumeroTrenoTrenoAutocomplete(n)` | `n` è il numero del treno | Informazioni testuali sul treno |
 | `cercaNumeroTreno(n)` | `n` è il numero del treno | Informazioni sul treno |
+| `elencoStazioni(n)` | `n` è il codice della regione | Lista di stazioni nella regione |
 
 `cercaNumeroTrenoTrenoAutocomplete` restituisce delle righe della seguente forma:
 
@@ -144,6 +145,66 @@ Inoltre potrebbe essere sbagliato, ad esempio su tratte di durata superiore a 24
 Si noti che i treni che cambiano numero sono lo stesso treno. Anche se il numero cambia in una certa stazione, la stazione di origine del treno è la stessa.
 
 In `fermate`, il campo `ritardo` ha il valore di `ritardoPartenza` se `tipoFermata` è `P` (ovvero se la "fermata" è la stazione di partenza del treno), di `ritardoArrivo` altrimenti.
+
+`elencoStazioni` ritorna un array di oggetti così fatti singolarmente:
+
+```json
+{
+    "codReg": "codice della regione",
+    "tipoStazione": "numero in [1, 4] che identifica il tipo (da decifrare)",
+    "dettZoomStaz": [
+        {
+            "codiceStazione": "codice identificativo della stazione (sempre uguale a codStazione)",
+            "zoomStartRange": "int in [6, 10]",
+            "zoomStopRange": "int in [6, 10]",
+            "pinpointVisibile": "bool",
+            "pinpointVisible": "bool",
+            "labelVisibile": "bool",
+            "labelVisible": "bool",
+            "codiceRegione": "sempre null"
+        }
+    ],
+    "pstaz": [], // Sempre vuoto
+    "mappaCitta": {
+      "urlImagePinpoint": "sempre stringa vuota",
+      "urlImageBaloon": "sempre stringa vuota"
+    },
+    "codiceStazione": "codice identificativo della stazione",
+    "codStazione": "sempre identico a codiceStazione",
+    "lat": "latitudine della stazione",
+    "lon": "longitudine della stazione",
+    "latMappaCitta": "quasi sempre 0.0, vedi nota",
+    "lonMappaCitta": "quasi sempre 0.0, vedi nota",
+    "localita": {
+      "nomeLungo": "nome lungo",
+      "nomeBreve": "nome breve",
+      "label": "etichetta (es. Venezia o Carbonia Sebariu), non sempre presente",
+      "id": "id della stazione"
+    },
+    "esterno": "bool",
+    "offsetX": "int",
+    "offsetY": "int",
+    "nomeCitta": "nome della città"
+}
+```
+
+Se scrivo qualcosa di fianco a un campo vuol dire che è sempre presente; se non è così lo specifico.
+
+Se `codStazione` (e quindi `codiceStazione`) inizia per `F`, è sicuro che `tipoStazione` sia `4`
+e che `nomeLungo`, `nomeBreve` e `nomeCitta` siano uguali a `codStazione` e che `label` sia vuoto.
+Non è vero il contrario: ci sono stazione di tipo `4` con nomi comprensibili da un umano.
+
+`dettZoomStaz` può essere un array vuoto e può avere più di un oggetto.
+
+`latMappaCitta` e `lonMappaCitta` sono sempre a `0.0` tranne che in tre casi: due sono identici tra
+loro e si ottengono chiamando `elencoStazioni(0)` e l'altro si ottiene chiamando `elencoStazioni(8)`.
+Differisce dai primi due solo per l'assenza di oggetti nell'array `dettZoomStaz`, che i primi due
+vedono popolato. Si tratta sempre della stessa stazione, ovvero l'AV di Reggio Emilia (codice S05254).
+`latMappaCitta` e `lonMappaCitta`, per questa stazione, hanno valori diversi da `lat` e `lon`,
+ma non so cosa rappresentino.
+
+Una nota riguardo ai nomi: `nomeLungo` è sempre in maiuscolo, tranne che per la stazione "Dev.Int. DD/AV" (codice S08220).
+In ben 13 casi (18 se si contano i duplicati), `nomeLungo` è più corto di `nomeBreve`.
 
 Di seguito la tabella dei codici delle regioni:
 
