@@ -3,16 +3,15 @@
 __version__ = '0.1'
 __author__ = 'Matteo Delton'
 
-import json
 import logging
 from argparse import ArgumentParser, BooleanOptionalAction
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, time, timedelta, timezone
-from pathlib import Path
 
 import inquirer  # type: ignore
-import requests
 from prettytable import PrettyTable
+
+from viaggiatreno import ViaggiaTreno
 
 # TODO:
 # - Handle the case where the train does not have all the stops (e.g. Saronno)
@@ -51,94 +50,7 @@ WHITE_BG = '\x1b[47m'
 
 CET = timezone(timedelta(seconds=3600), 'CET')
 
-regions: dict[int, str] = {
-    0: 'Italia',
-    1: 'Lombardia',
-    2: 'Liguria',
-    3: 'Piemonte',
-    4: 'Valle d\'Aosta',
-    5: 'Lazio',
-    6: 'Umbria',
-    7: 'Molise',
-    8: 'Emilia Romagna',
-    9: 'Trentino-Alto Adige',
-    10: 'Friuli-Venezia Giulia',
-    11: 'Marche',
-    12: 'Veneto',
-    13: 'Toscana',
-    14: 'Sicilia',
-    15: 'Basilicata',
-    16: 'Puglia',
-    17: 'Calabria',
-    18: 'Campania',
-    19: 'Abruzzo',
-    20: 'Sardegna',
-    21: 'Provincia autonoma di Treno',
-    22: 'Provincia autonoma di Bolzano'
-}
-
-
-def get(method: str, *params):
-    """call the ViaggiaTreno API with the given method and parameters."""
-    base_url = 'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno'
-    url = f'{base_url}/{method}/{"/".join(str(p) for p in params)}'
-
-    r = requests.get(url)
-
-    if r.status_code != 200:
-        logging.error(f'Error {r.status_code} while calling {url}: {r.text}')
-        return None
-
-    if (logging.getLogger().getEffectiveLevel() == logging.DEBUG):
-        dt = datetime.strptime(
-            r.headers['Date'], '%a, %d %b %Y %H:%M:%S %Z').strftime('%Y-%j %X')
-        filename = f'{dt} {method}({", ".join(str(p) for p in params)})'
-        Path('responses').mkdir(parents=True, exist_ok=True)
-        with open(f'responses/{filename}.json', 'w') as f:
-            json.dump(r.json(), f, indent=2)
-            f.write('\n')
-
-    return r.json() if 'json' in r.headers['Content-Type'] else r.text
-
-
-def statistiche(timestamp: int):
-    return get('statistiche', timestamp)
-
-
-def autocompleta_stazione(text: str) -> str | None:
-    return get('autocompletaStazione', text)
-
-
-def cerca_stazione(text: str):
-    return get('cercaStazione', text)
-
-
-def dettaglio_stazione(codiceStazione: str, codiceRegione: int):
-    return get('dettaglioStazione', codiceStazione, codiceRegione)
-
-
-def regione(codiceStazione: str) -> int | None:
-    return get('regione', codiceStazione)
-
-
-def partenze(codiceStazione: str, orario: str):
-    # orario's format is '%a %b %d %Y %H:%M:%S GMT%z (%Z)'
-    return get('partenze', codiceStazione, orario)
-
-
-def arrivi(codiceStazione: str, orario: str):
-    # orario's format is '%a %b %d %Y %H:%M:%S GMT%z (%Z)'
-    return get('arrivi', codiceStazione, orario)
-
-
-def andamento_treno(codOrigine: str, numeroTreno: int, dataPartenza: int):
-    # dataPartenza is in ms sine the Epoch
-    return get('andamentoTreno', codOrigine, numeroTreno, dataPartenza)
-
-
-def soluzioni_viaggio(codLocOrig: str, codLocDest: str, date: str):
-    # date's format is '%FT%T' and station codes don't have the starting 'S'
-    return get('soluzioniViaggioNew', codLocOrig, codLocDest, date)
+vt = ViaggiaTreno()
 
 
 class Duration(timedelta):
@@ -167,6 +79,7 @@ class Train:
         if (data['orarioPartenza'] is not None):
             dep_datetime: datetime = datetime.fromtimestamp(
                 data['orarioPartenza'] / 1000).replace(tzinfo=CET)
+            # TODO: check if it corresponds to data['dataPartenzaTreno']
             self.dep_date: date = dep_datetime.date()
             self.dep_time: time = dep_datetime.timetz()
         if (data['orarioArrivo'] is not None):
@@ -196,7 +109,7 @@ class Train:
         ### andamentoTreno() data ###
         #############################
 
-        at_data = andamento_treno(
+        at_data = vt.train_status(
             data['codOrigine'], data['numeroTreno'], data['dataPartenzaTreno'])
 
         # If this happens, viaggiatreno.it is not provinding real-time data
@@ -318,7 +231,7 @@ class Station:
             self.name: str = partialName
             return
 
-        r = cerca_stazione(partialName)
+        r = vt.find_station(partialName)
 
         if not r:
             print('Nessuna stazione trovata')
@@ -341,15 +254,6 @@ class Station:
     def __str__(self) -> str:
         return f'Stazione di {self.name}'
 
-    def get_departures(self, dt: datetime):
-        return partenze(self.id, dt.strftime('%a %b %d %Y %H:%M:%S GMT%z (%Z)'))
-
-    def get_arrivals(self, dt: datetime):
-        return arrivi(self.id, dt.strftime('%a %b %d %Y %H:%M:%S GMT%z (%Z)'))
-
-    def get_journey_solutions(self, other: 'Station', dt: datetime):
-        return soluzioni_viaggio(self.id[1:], other.id[1:], dt.strftime('%FT%T'))
-
     def show_departures(self, dt: datetime) -> None:
         """Prints the departures from the station.
 
@@ -357,7 +261,7 @@ class Station:
         """
         print(f'{BOLD}Partenze da {self.name}{RESET}')
 
-        departures = self.get_departures(dt)
+        departures = vt.departures(self.id, dt)
         if not departures:
             print('Nessun treno in partenza')
             return
@@ -444,7 +348,7 @@ class Station:
         """
         print(f'{BOLD}Arrivi a {self.name}{RESET}')
 
-        arrivals = self.get_arrivals(dt)
+        arrivals = vt.arrivals(self.id, dt)
         if not arrivals:
             print('Nessun treno in arrivo')
             return
@@ -514,7 +418,7 @@ class Station:
             print(table)
 
     def show_journey_solutions(self, other: 'Station', dt: datetime) -> None:
-        solutions = self.get_journey_solutions(other, dt)
+        solutions = vt.travel_solutions(self.id, other.id, dt)
         print(
             f'{BOLD}Soluzioni di viaggio da {self.name} a {other.name}{RESET}')
         for sol in solutions['soluzioni']:
@@ -553,18 +457,18 @@ class Station:
 
 class Stats:
     def __init__(self) -> None:
-        self.dt: datetime = datetime.now(UTC)
-        timestamp = int(self.dt.timestamp() * 1000)
-        data = statistiche(timestamp)
+        data = vt.statistics()
         self.trains_today: int = data['treniGiorno']
         self.trains_now: int = data['treniCircolanti']
+        self.last_update: datetime = datetime.fromtimestamp(
+            data['ultimoAggiornamento'] / 1000).replace(tzinfo=CET)
 
     def __str__(self) -> str:
         return (
             f'Numero treni in circolazione da mezzanotte: {
                 self.trains_today}\n'
             f'Numero treni in circolazione ora: {self.trains_now}\n'
-            f'{DIM}Ultimo aggiornamento: {self.dt.astimezone().strftime("%T")}{
+            f'{DIM}Ultimo aggiornamento: {self.last_update.astimezone().strftime("%T")}{
                 RESET}'
         )
 
@@ -597,7 +501,7 @@ if __name__ == '__main__':
 
     args = ap.parse_args()
 
-    # Check if the log level is valid
+    # Check if the log level is validf
     if args.log_level not in ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'):
         print(
             f'Invalid log level: {RED}{args.log_level}{RESET} '
