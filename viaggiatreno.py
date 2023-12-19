@@ -1,16 +1,16 @@
-import json
-import logging
-from csv import DictWriter
 from datetime import date, datetime, time
-from pathlib import Path
+from typing import Any
 
 import requests
+
+type JSON = Any
+type HTML = str
 
 
 class ViaggiaTreno:
     """A wrapper for the ViaggiaTreno API."""
 
-    BASE_URL: str = 'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno'
+    BASE_URI: str = 'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno'
     REGIONS: dict[int, str] = {
         0: 'Italia',
         1: 'Lombardia',
@@ -37,61 +37,79 @@ class ViaggiaTreno:
         22: 'Provincia autonoma di Bolzano'
     }
 
-    def _get(self, method: str, *params):
-        """call the ViaggiaTreno API with the given method and parameters."""
-
-        url = f'{self.BASE_URL}/{method}/{"/".join(str(p) for p in params)}'
-        print(url)
-
-        r = requests.get(url)
-
-        if r.status_code != 200:
-            logging.error(f'Error {r.status_code} while calling {
-                          url}: {r.text}')
-            return None
-
-        if (logging.getLogger().getEffectiveLevel() == logging.DEBUG):
-            dt = datetime.strptime(
-                r.headers['Date'], '%a, %d %b %Y %H:%M:%S %Z').strftime('%Y-%j %X')
-            filename = f'{dt} {method}({", ".join(str(p) for p in params)})'
-            Path('responses').mkdir(parents=True, exist_ok=True)
-            with open(f'responses/{filename}.json', 'w') as f:
-                json.dump(r.json(), f, indent=2)
-                f.write('\n')
-
-        return r.json() if 'json' in r.headers['Content-Type'] else r.text
-
-    def departures(self, codiceStazione: str, dt: datetime):
+    # TODO: add optional parameters date and time. They'll need to be
+    # combined. If one of them is missing, it should default to the
+    # current date/time. Make dt optional.
+    def departures(self, station_id: str, dt: datetime) -> JSON:
         """Return the departures from the given station at the given time.
         If the time is naive, it is assumed to be in the local timezone.
         """
         dep_time = dt.strftime('%a %b %d %Y %H:%M:%S')
-        return self._get('partenze', codiceStazione, dep_time)
 
-    def arrivals(self, codiceStazione: str, dt: datetime):
+        url: str = f'{
+            self.BASE_URI}/partenze/{station_id}/{dep_time}'
+        r = requests.get(url)
+
+        return r.json()
+
+    # TODO: add optional parameters date and time. They'll need to be
+    # combined. If one of them is missing, it should default to the
+    # current date/time. Make dt optional.
+    def arrivals(self, station_id: str, dt: datetime) -> JSON:
         """Return the arrivals from the given station at the given time.
         If the time is naive, it is assumed to be in the local timezone.
         """
         arr_time = dt.strftime('%a %b %d %Y %H:%M:%S')
-        return self._get('arrivi', codiceStazione, arr_time)
 
-    def tratte_canvas(self, codiceOrigine, numeroTreno, dataPartenza):
-        pass
-        return self._get('tratteCanvas', codiceOrigine, numeroTreno, dataPartenza)
+        url: str = f'{
+            self.BASE_URI}/arrivi/{station_id}/{arr_time}'
+        r = requests.get(url)
 
-    def cerca_numero_treno_treno_auto_complete(self, text):
-        pass
-        return self._get('cercaNumeroTrenoTrenoAutocomplete', text)
+        return r.json()
 
-    # TODO: check if it returns None or an empty string when no match is found
-    def autocompleta_stazione(self, text: str) -> str:
-        return self._get('autocompletaStazione', text)
+    def tratte_canvas(self, origin_id: str, train_number: int, dep_date: date | datetime | int | str) -> JSON:
+        search = Utils.to_ms_date_timestamp(dep_date)
 
-    def language(self, idLingua):
-        pass
-        return self._get('language', idLingua)
+        url: str = f'{
+            self.BASE_URI}/tratteCanvas/{origin_id}/{train_number}/{search}'
+        r = requests.get(url)
 
-    def travel_solutions(self, origin_id: str, dest_id: str, dt: datetime):
+        return r.json()
+
+    def find_train_number_autocomplete(self, train_number: int) -> str:
+        """Return a list of trains with the given number.
+        A train number is not unique, so the list may contain more than
+        one train. The format is 'train_number - departure_station|train_number-station_id-departure_date' whre departure_date is
+        in ms since Epoch.
+        """
+        url: str = f'{
+            self.BASE_URI}/cercaNumeroTrenoTrenoAutocomplete/{train_number}'
+        r = requests.get(url)
+
+        return r.text
+
+    def autocomplete_station(self, text: str) -> str:
+        """Return a list of stations starting with the given text.
+        The format is 'station_name|station_id', where station_id is the
+        one which starts with a letter and is followed by the actual
+        station code padded with zeroes up to 5 digits).
+        """
+
+        url: str = f'{self.BASE_URI}/autocompletaStazione/{text}'
+        r = requests.get(url)
+
+        return r.text
+
+    def language(self, idLingua) -> JSON:
+        url: str = f'{self.BASE_URI}/language/{idLingua}'
+        r = requests.get(url)
+
+        return r.json()
+
+    # TODO: add optional parameters date and time. They'll need to be
+    # combined. If one of them is missing, it should default to the
+    # current date/time. Make dt optional.
+    def travel_solutions(self, origin_id: str, dest_id: str, dt: datetime) -> JSON:
         """Return travel solutions from the given origin to the given
         destination at the given time.
         If the time is naive, it is assumed to be in the local timezone.
@@ -106,130 +124,178 @@ class ViaggiaTreno:
 
         search_datetime: str = dt.isoformat()
 
-        return self._get('soluzioniViaggioNew', origin_id, dest_id, search_datetime)
+        url: str = f'{
+            self.BASE_URI}/soluzioniViaggioNew/{origin_id}/{dest_id}/{search_datetime}'
+        r = requests.get(url)
 
-    def elenco_stazioni_citta(self, stazione: str):
-        pass
-        return self._get('elencoStazioniCitta', stazione)
+        return r.json()
 
-    def wheather(self, region_code: int):
-        # I'm not sure about what the API return when the region code is
+    def list_stations_city(self, stazione: str) -> JSON:
+        url = f'{self.BASE_URI}/elencoStazioniCitta/{stazione}'
+        r = requests.get(url)
+
+        return r.json()
+
+    def wheather(self, region_code: int) -> JSON:
+        # I'm not sure about what the API returns when the region code is
         # 0, the codes are different than the ones found in the regions
-        pass
-        return self._get('datiMeteo', region_code)
+        url: str = f'{self.BASE_URI}/datiMeteo/{region_code}'
+        r = requests.get(url)
 
-    def dettaglio_stazione(self, codiceStazione, codiceRegione: int):
-        pass
-        return self._get('dettaglioStazione', codiceStazione, codiceRegione)
+        return r.json()
 
-    def stations_list(self, region_code: int):
-        return self._get('elencoStazioni', region_code)
+    def station_detail(self, codiceStazione, codiceRegione: int) -> JSON:
+        url: str = f'{
+            self.BASE_URI}/dettaglioStazione/{codiceStazione}/{codiceRegione}'
+        r = requests.get(url)
 
-    def autocompleta_stazione_imposta_viaggio(self, text: str):
-        pass
-        return self._get('autocompletaStazioneImpostaViaggio', text)
+        return r.json()
 
-    def autocompleta_stazione_nts(self, text: str):
-        pass
-        return self._get('autocompletaStazioneNTS', text)
+    def stations_list(self, region_code: int) -> JSON:
+        """Return the list of stations in the region with the given code."""
+        url: str = f'{self.BASE_URI}/elencoStazioni/{region_code}'
+        r = requests.get(url)
 
-    def property(self, name):
-        pass
-        return self._get('property', name)
+        return r.json()
 
-    def infomobilita_rss_box(self, isInfoLavori):
-        pass
-        return self._get('infomobilitaRSSBox', isInfoLavori)
+    def autocomplete_station_set_trip(self, text: str) -> str:
+        # It seems to return the same data as autocompleta_stazione
+        url: str = f'{self.BASE_URI}/autocompletaStazioneImpostaViaggio/{text}'
+        r = requests.get(url)
 
-    def train_status(self, origin_id: str, train_number: int, dep_date: date | datetime | int | str):
+        return r.text
+
+    def autocomplete_station_nts(self, text: str) -> str:
+        """Return a list of stations starting with the given text.
+        The format is 'station_name|station_id', but here station_id is
+        formed by a code that identifies the manager of the station,
+        followed by the actual station code padded with zeroes. Its length
+        is always 9 digits (to be confirmed).
+        """
+        url: str = f'{self.BASE_URI}/autocompletaStazioneNTS/{text}'
+        r = requests.get(url)
+
+        return r.text
+
+    def property(self, name) -> str:
+        url: str = f'{self.BASE_URI}/property/{name}'
+        r = requests.get(url)
+
+        return r.json() if 'json' in r.headers['Content-Type'] else r.text
+
+    def infomobilita_rss_box(self, isInfoLavori) -> HTML:
+        url: str = f'{self.BASE_URI}/infomobilitaRSSBox/{isInfoLavori}'
+        r = requests.get(url)
+
+        return r.text
+
+    def train_status(self, origin_id: str, train_number: int, dep_date: date | datetime | int | str) -> str:
         """Return the status of the given train at the given time.
         The origin id is the one returned by the API (which starts with
         a letter and is followed by the actual station code padded with
         zeroes up to 5 digits).
         """
         search = Utils.to_ms_date_timestamp(dep_date)
-        return self._get('andamentoTreno', origin_id, train_number, search)
 
-    def cerca_numero_treno(self, numeroTreno):
-        pass
-        return self._get('cercaNumeroTreno', numeroTreno)
+        url: str = f'{
+            self.BASE_URI}/andamentoTreno/{origin_id}/{train_number}/{search}'
+        r = requests.get(url)
 
-    def infomobilita_ticker(self):
-        pass
-        return self._get('infomobilitaTicker')
+        return r.json()
 
-    def elenco_tratte(self, idRegione, zoomlevel, categoriaTreni, catAV, timestamp):
-        pass
-        return self._get('elencoTratte', idRegione, zoomlevel, categoriaTreni, catAV, timestamp)
+    def cerca_numero_treno(self, numeroTreno: int) -> JSON:
+        url: str = f'{self.BASE_URI}/cercaNumeroTreno/{numeroTreno}'
+        r = requests.get(url)
 
-    def cerca_programma_orario_destinazione_autocomplete(self, idStazionePartenza):
-        pass
-        return self._get('cercaProgrammaOrarioDestinazioneAutocomplete', idStazionePartenza)
+        return r.json()
 
-    def dettaglio_viaggio(self, idStazioneDa, idStazioneA):
-        pass
-        return self._get('dettaglioViaggio', idStazioneDa, idStazioneA)
+    def infomobilita_ticker(self) -> HTML:
+        url: str = f'{self.BASE_URI}/infomobilitaTicker'
+        r = requests.get(url)
 
-    def dettaglio_programma_orario(self, dataDa, dataA, idStazionePartenza, idStazioneArrivo):
-        pass
-        return self._get('dettaglioProgrammaOrario', dataDa, dataA, idStazionePartenza, idStazioneArrivo)
+        return r.text
 
-    def statistics(self) -> dict[str, int]:
+    def elenco_tratte(self, idRegione: int, zoomlevel, categoriaTreni, catAV, timestamp: int) -> JSON | str:
+        url: str = f'{
+            self.BASE_URI}/elencoTratte/{idRegione}/{zoomlevel}/{categoriaTreni}/{catAV}/{timestamp}'
+        r = requests.get(url)
+
+        return r.json() if 'json' in r.headers['Content-Type'] else r.text
+
+    def cerca_programma_orario_destinazione_autocomplete(self, idStazionePartenza) -> JSON | str:
+        url: str = f'{
+            self.BASE_URI}/cercaProgrammaOrarioDestinazioneAutocomplete/{idStazionePartenza}'
+        r = requests.get(url)
+
+        return r.json() if 'json' in r.headers['Content-Type'] else r.text
+
+    # TODO: controllare che non manchi un qualche parametro
+    def dettaglio_viaggio(self, idStazioneDa, idStazioneA) -> JSON | str:
+        url: str = f'{
+            self.BASE_URI}/dettaglioViaggio/{idStazioneDa}/{idStazioneA}'
+        r = requests.get(url)
+
+        return r.json() if 'json' in r.headers['Content-Type'] else r.text
+
+    def dettaglio_programma_orario(self, dataDa, dataA, idStazionePartenza, idStazioneArrivo) -> JSON | str:
+        url: str = f'{self.BASE_URI}/dettaglioProgrammaOrario/{
+            dataDa}/{dataA}/{idStazionePartenza}/{idStazioneArrivo}'
+        r = requests.get(url)
+
+        return r.json() if 'json' in r.headers['Content-Type'] else r.text
+
+    def statistics(self) -> JSON:
         """Return statistics about trains.
         Even though the API requires a timestamp, it seems to ignore it and
         returns the same data regardless of the timestamp. Therefore, the
         timestamp is not required and defaults to the current time.
         """
         timestamp = int(datetime.now().timestamp() * 1000)
-        return self._get('statistiche', timestamp)
 
-    def find_station(self, text: str):
-        return self._get('cercaStazione', text)
+        url: str = f'{self.BASE_URI}/statistiche/{timestamp}'
+        r = requests.get(url)
 
-    def region(self, codiceStazione: str) -> int | None:
-        return self._get('regione', codiceStazione)
+        return r.json()
 
-    def cerca_programma_orario_origine_autocomplete(self, idStazioneArrivo):
-        pass
-        return self._get('cercaProgrammaOrarioOrigineAutocomplete', idStazioneArrivo)
+    def find_station(self, text: str) -> JSON:
+        """Return a list of stations starting with the given text."""
+        url: str = f'{self.BASE_URI}/cercaStazione/{text}'
+        r = requests.get(url)
 
-    def dettagli_tratta(self, idRegione, idTrattaAB, idTrattaBA, categoriaTreni, catAV):
-        pass
-        return self._get('dettagliTratta', idRegione, idTrattaAB, idTrattaBA, categoriaTreni, catAV)
+        return r.json()
 
-    def infomobilita_rss(self, isInfoLavori):
-        pass
-        return self._get('infomobilitaRSS', isInfoLavori)
+    def region(self, codiceStazione: str) -> int:
+        # TODO: manipulate codiceStazione
+
+        url: str = f'{self.BASE_URI}/regione/{codiceStazione}'
+        r = requests.get(url)
+
+        return int(r.text)
+
+    def cerca_programma_orario_origine_autocomplete(self, arrival_station_id: str) -> JSON | str:
+        url: str = f'{
+            self.BASE_URI}/cercaProgrammaOrarioOrigineAutocomplete/{arrival_station_id}'
+        r = requests.get(url)
+
+        return r.json() if 'json' in r.headers['Content-Type'] else r.text
+
+    def dettagli_tratta(self, idRegione, idTrattaAB, idTrattaBA, categoriaTreni, catAV) -> JSON | str:
+        url: str = f'{self.BASE_URI}/dettagliTratta/{idRegione}/{
+            idTrattaAB}/{idTrattaBA}/{categoriaTreni}/{catAV}'
+        r = requests.get(url)
+
+        return r.json() if 'json' in r.headers['Content-Type'] else r.text
+
+    def infomobilita_rss(self, isInfoLavori) -> HTML:
+        url: str = f'{self.BASE_URI}/infomobilitaRSS/{isInfoLavori}'
+        r = requests.get(url)
+
+        return r.text
 
 
 class Utils:
     """A collection of utility functions."""
     vt = ViaggiaTreno()
-
-    @classmethod
-    def generate_station_database(cls):
-        """Generate a CSV file containing all the stations in Italy."""
-        with open('stations.csv', 'w', newline='') as csvfile:
-            fieldnames = ['short_name', 'region_code', 'station_id',
-                          'long_name', 'label', 'lat', 'lon', 'station_type']
-            writer = DictWriter(csvfile, fieldnames=fieldnames)
-
-            writer.writeheader()
-            for n in range(23):
-                stations = cls.vt.stations_list(n)
-                for s in stations:
-                    writer.writerow({
-                        'short_name': s['localita']['nomeBreve'],
-                        'region_code': s['codReg'],
-                        'station_id': s['codStazione'],
-                        'long_name': s['localita']['nomeLungo'],
-                        'label': s['localita']['label'],
-                        'lat': s['lat'],
-                        'lon': s['lon'],
-                        'station_type': s['tipoStazione']
-                    })
-
-            # TODO: remove duplicates before writing to file
 
     @classmethod
     def to_ms_date_timestamp(cls, date_: date | datetime | int | str) -> int:
