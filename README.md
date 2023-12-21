@@ -29,7 +29,7 @@ Vediamo per quali stazioni passa il treno, a che binario si ferma e se è in rit
 
 ## Possibili _endpoint_
 
-- [`autocompletaStazione`, `autocompletaStazioneImpostaViaggio` e `autocompletaStazioneNTS`](#autocompletastazione-autocompletastazioneimpostaviaggio-e-autocompletastazionents)
+- [`autocompletaStazione`, `autocompletaStazioneImpostaViaggio`,`autocompletaStazioneNTS` e `cercaStazione`](#autocompletastazione-autocompletastazioneimpostaviaggioautocompletastazionents-e-cercastazione)
 - [`partenze` e `arrivi`](#partenze-e-arrivi)
 - [`cercaNumeroTrenoTrenoAutocomplete` e `cercaNumeroTreno`](#cercanumerotrenotrenoautocomplete-e-cercanumerotreno)
 - [`dettaglioStazione`](#dettagliostazione)
@@ -39,7 +39,7 @@ Vediamo per quali stazioni passa il treno, a che binario si ferma e se è in rit
 
 Quelli che chiamo parametri vanno aggiunti dopo l'endpoint, separati da un `/`.
 
-### `autocompletaStazione`, `autocompletaStazioneImpostaViaggio` e `autocompletaStazioneNTS`
+### `autocompletaStazione`, `autocompletaStazioneImpostaViaggio`,`autocompletaStazioneNTS` e `cercaStazione`
 
 > **Parametri**:
 >
@@ -48,10 +48,26 @@ Quelli che chiamo parametri vanno aggiunti dopo l'endpoint, separati da un `/`.
 La risposta è nel formato `NOME_STAZIONE|CODICE_STAZIONE`.
 
 Per ottenere tutte le stazioni possiamo chiamare `autocompletaStazione*` con tutte le lettere dell'alfabeto, una per volta. Vediamo che non ci sono duplicati.
+
 Tuttavia, `autocompletaStazione` ritorna un risultato in più rispetto ad `autocompletaStazioneImpostaViaggio`: "ROMA TIBURTINA PIAZZALE EST|S08226".
 `autocompletaStazioneNTS` riporta numerosi risultati in più, anche se ci sono diverse stazioni tornate dalle altre chiamate che non sono presenti in `autocompletaStazioneNTS` (ma molte sembrano essere grafie alternative, magari con o senza gli spazi attorno ai trattini).
+
 C'è una differenza fondamentale tra i risultati delle prime due chiamate e quelli della terza: il codice riportato dai primi due è composto da una S seguita da 5 numeri (regex `S\d{5}`), mentre quello riportato dalla terza è composto dal numero 83 seguito da 7 numeri (regex `83\d{7}`).
 L'83 è il [codice RICS](https://uic.org/support-activities/it/rics) privato degli zeri che identifica Ferrovie dello Stato Italiane SpA[^1], mentre le cifre seguenti identificano la stazione con zeri di padding. Anche dopo la S possono seguire zeri di padding rispetto al codice effettivo. I codici effettivi dovrebbero essere i [codici ENEE](https://uic.org/support-activities/it/location-codes-enee), ma ce ne sono alcuni strani (tipo quelli senza zeri di padding). È possibile che siano invece codici del [Central Reference File Database](https://rne.eu/it/rne-applications/ccs/crd/#:~:text=The%20Central%20Reference%20File%20Database,makes%20them%20available%20to%20users.).
+
+Il risultato di `autocompletaStazione` è nel formato `NOME_STAZIONE|CODICE_STAZIONE`, mentre quello di `cercaStazione` è un JSON così fatto:
+
+```json
+[
+  {
+    "nomeLungo": "nome lungo della stazione",
+    "nomeBreve": "nome breve della stazione",
+    "label": "etichetta (es. Venezia o Carbonia Sebariu), non sempre presente",
+    "id": "id della stazione"
+  },
+  ...
+]
+```
 
 ### `partenze` e `arrivi`
 
@@ -232,7 +248,7 @@ In `fermate`, il campo `ritardo` ha il valore di `ritardoPartenza` se `tipoFerma
   "esterno": "bool",
   "offsetX": "int",
   "offsetY": "int",
-  "nomeCitta": "nome della città"
+  "nomeCitta": "nome della città della stazione"
 }
 ```
 
@@ -254,6 +270,8 @@ ma non so cosa rappresentino.
 Una nota riguardo ai nomi: `nomeLungo` è sempre in maiuscolo, tranne che per la stazione "Dev.Int. DD/AV" (codice S08220).
 In ben 13 casi (18 se si contano i duplicati), `nomeLungo` è più corto di `nomeBreve`.
 
+`nomeCitta` non è affidabile: spesso è una A e basta. Potrebbe essere che ci sia solo nelle città con più stazioni.
+
 ### `soluzioniViaggioNew`
 
 > **Parametri**:
@@ -261,6 +279,19 @@ In ben 13 casi (18 se si contano i duplicati), `nomeLungo` è più corto di `nom
 > 1. `str`: codice della stazione di partenza
 > 2. `str`: codice della stazione di arrivo
 > 3. `str`: data nel formato `YYYY-MM-DDTHH:MM:SS*`
+
+### `StampaTreno`
+
+Unico endpoint di tipo POST.
+Va chiamato passando un payload come questo: `numTreno=3040&locArrivo=S01700&locArrivoDesc=MILANO+CENTRALE&date=20-12-2023`.
+Esempio di risposta:
+
+```json
+{
+  "comunicazione": "Gentile Cliente il treno  3040 del giorno 20/12/2023 &egrave; arrivato alla stazione di MILANO CENTRALE alle ore 19:33  con 1 minuti di anticipo.",
+  "pdf": true
+}
+```
 
 ## Tabella dei codici delle regioni
 
