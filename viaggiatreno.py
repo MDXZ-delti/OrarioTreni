@@ -80,7 +80,7 @@ class ViaggiaTrenoAPIWrapper:
                     "origin_id": d["codOrigine"],
                     "destination": d["destinazione"],
                     "scheduled_track": d["binarioProgrammatoPartenzaDescrizione"],
-                    "track": d["binarioEffettivoPartenzaDescrizione"],
+                    "actual_track": d["binarioEffettivoPartenzaDescrizione"],
                     "departure_time": Utils.from_ms_timestamp(d["orarioPartenza"]),
                     "departed_from_origin": not d["nonPartito"],
                     "in_station": d["inStazione"],
@@ -115,7 +115,7 @@ class ViaggiaTrenoAPIWrapper:
                     "origin_id": a["codOrigine"],
                     "origin": a["origine"],
                     "scheduled_track": a["binarioProgrammatoArrivoDescrizione"],
-                    "track": a["binarioEffettivoArrivoDescrizione"],
+                    "actual_track": a["binarioEffettivoArrivoDescrizione"],
                     "arrival_time": Utils.from_ms_timestamp(a["orarioArrivo"]),
                     "departed_from_origin": not a["nonPartito"],
                     "in_station": a["inStazione"],
@@ -207,11 +207,11 @@ class ViaggiaTrenoAPIWrapper:
                     ),
                     "departure_time": Utils.from_ms_timestamp(s["partenzaReale"]),
                     "scheduled_arrival_track": s["binarioProgrammatoArrivoDescrizione"],
-                    "arrival_track": s["binarioEffettivoArrivoDescrizione"],
+                    "actual_arrival_track": s["binarioEffettivoArrivoDescrizione"],
                     "scheduled_departure_track": s[
                         "binarioProgrammatoPartenzaDescrizione"
                     ],
-                    "departure_track": s["binarioEffettivoPartenzaDescrizione"],
+                    "actual_departure_track": s["binarioEffettivoPartenzaDescrizione"],
                     "stop_type": s["tipoFermata"],
                 }
             )
