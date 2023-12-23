@@ -185,14 +185,12 @@ class Style:
     DIM = "\x1b[2m"
     ITALIC = "\x1b[3m"
     UNDERLINE = "\x1b[4m"
-    BLINK = "\x1b[5m"
     INVERTED = "\x1b[7m"
     HIDDEN = "\x1b[8m"
 
     NORMAL = "\x1b[22m"
     STRAIGHT = "\x1b[23m"
     NOT_UNDERLINED = "\x1b[24m"
-    BLINK_OFF = "\x1b[25m"
     INVERTED_OFF = "\x1b[27m"
     REVEAL = "\x1b[28m"
 
@@ -215,16 +213,12 @@ class Style:
         return f"{cls.UNDERLINE}{text}{cls.NOT_UNDERLINED}"
 
     @classmethod
-    def blink(cls, text):
-        return f"{cls.BLINK}{text}{cls.BLINK_OFF}"
-
-    @classmethod
     def inverted(cls, text):
         return f"{cls.INVERTED}{text}{cls.INVERTED_OFF}"
 
     @classmethod
     def hidden(cls, text):
-        return f"{cls.HIDDEN}{text}{cls.RESET}"
+        return f"{cls.HIDDEN}{text}{cls.REVEAL}"
 
     @classmethod
     def reset_all(cls, text):
