@@ -29,8 +29,6 @@ class ViaggiaTrenoAPIWrapper:
         r = requests.get(url)
         r.raise_for_status()
 
-        print(requests.utils.requote_uri(url))
-
         return r.json() if "json" in r.headers["Content-Type"] else r.text
 
     @classmethod
@@ -85,7 +83,7 @@ class ViaggiaTrenoAPIWrapper:
                     "track": d["binarioEffettivoPartenzaDescrizione"],
                     "departure_time": Utils.from_ms_timestamp(d["orarioPartenza"]),
                     "departed_from_origin": not d["nonPartito"],
-                    "departed_from_station": d["inStazione"],
+                    "in_station": d["inStazione"],
                     "delay": int(d["ritardo"]),
                     "warning": d["subTitle"],
                 }
@@ -120,7 +118,7 @@ class ViaggiaTrenoAPIWrapper:
                     "track": a["binarioEffettivoArrivoDescrizione"],
                     "arrival_time": Utils.from_ms_timestamp(a["orarioArrivo"]),
                     "departed_from_origin": not a["nonPartito"],
-                    "departed_from_station": a["inStazione"],
+                    "in_station": a["inStazione"],
                     "delay": int(a["ritardo"]),
                     "warning": a["subTitle"],
                 }
@@ -214,6 +212,7 @@ class ViaggiaTrenoAPIWrapper:
                         "binarioProgrammatoPartenzaDescrizione"
                     ],
                     "departure_track": s["binarioEffettivoPartenzaDescrizione"],
+                    "stop_type": s["tipoFermata"],
                 }
             )
 
@@ -224,6 +223,7 @@ class ViaggiaTrenoAPIWrapper:
             "last_update_station": s
             if (s := r["stazioneUltimoRilevamento"]) != "--"
             else None,
+            "train_type": r["tipoTreno"],
             "number": str(r["numeroTreno"]),
             "departure_date": Utils.from_ms_timestamp(r["dataPartenzaTreno"]).date(),
             "origin_id": r["idOrigine"],
