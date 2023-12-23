@@ -21,11 +21,12 @@ class Train:
         self.departure_date = departure_date
 
     def __str__(self):
-        numbers = self.train_number
-        if hasattr(self, "number_changes"):
+        numbers = str(self.train_number)
+        if self.number_changes:
+            numbers += "/"
             numbers += "/".join(c["new_train_number"] for c in self.number_changes)
 
-        if hasattr(self, "category"):
+        if self.category:
             return f"{self.category} {numbers}"
         else:
             return f"{numbers}"
@@ -63,90 +64,115 @@ def choose_station(station):
     return name, id
 
 
-def _process_train(t):
+def _get_track(actual_track, scheduled_track, probable_track=None):
+    if actual_track is not None:
+        if scheduled_track is not None:
+            if actual_track == scheduled_track:
+                return F.blue(actual_track)
+            else:
+                return F.magenta(actual_track)
+        else:
+            # I know it's reduntant, but I want to be explicit
+            return F.blue(actual_track)
+
+    if probable_track is not None:
+        return F.blue(probable_track)
+
+    if scheduled_track is not None:
+        return scheduled_track
+
+    return ""
+
+
+def _get_delay(delay, departed_from_origin, actual_departure_track_known=False):
+    if departed_from_origin:
+        if delay > 0:
+            return F.red(f"{delay:+}")
+        elif delay < 0:
+            return F.green(f"{delay:+}")
+        else:
+            return "In orario"
+    elif actual_departure_track_known:
+        return "In stazione"
+    else:
+        return "Non partito"
+
+
+def _process_train(t, station_id, is_departure):
     train = Train(t["origin_id"], t["number"], t["departure_date"])
     train.category = t["category"]
 
-    if t["departed_from_origin"]:
-        if t["delay"] > 0:
-            delay = F.red(f'{t["delay"]:+}')
-        elif t["delay"] < 0:
-            delay = F.green(f'{t["delay"]:+}')
-        else:
-            delay = "In orario"
-    else:
-        delay = "Non partito"
+    delay = _get_delay(t["delay"], t["departed_from_origin"])
+    track = _get_track(t["actual_track"], t["scheduled_track"])
 
-    if t["track"] is None:
-        track = t["scheduled_track"] or ""
-    elif t["track"] == t["scheduled_track"]:
-        track = F.blue(t["track"])
+    if is_departure:
+        dest_or_origin = t["destination"]
+        time = t["departure_time"]
     else:
-        # Even if scheduled track is None…
-        track = F.magenta(t["track"])
+        dest_or_origin = t["origin"]
+        time = t["arrival_time"]
 
     # Update with more accurate data
-    tp = API.get_train_progress(t["origin_id"], t["number"], t["departure_date"])
+    progress = API.get_train_progress(t["origin_id"], t["number"], t["departure_date"])
 
-    if tp:
-        train.number_changes = tp["train_number_changes"]
-
-        s = None
-        o = None
-        for stop in tp["stops"]:
-            if stop["station_id"] == station_id and s is None:
-                s = stop
-            if stop["station_id"] == t["origin_id"] and o is None:
-                o = stop
-            if s is not None and o is not None:
-                break
-
-        assert s is not None and o is not None
-
-        if t["departed_from_origin"]:
-            if tp["delay"] > 0:
-                delay = F.red(f'{tp["delay"]:+}')
-            elif tp["delay"] < 0:
-                delay = F.green(f'{tp["delay"]:+}')
-            else:
-                delay = "In orario"
-        elif s["departure_track"]:
-            delay = "In stazione"  # Pronto a sfrecciare
-        elif o["departure_track"]:
-            delay = "In stazione"  # Quella di origine
-        else:
-            delay = "Non partito"  # E non si sa dov'è
-
-        if s["departure_track"] is None:
-            # Assuming that the trains departs from the same track
-            if s["arrival_track"] is not None:
-                if s["arrival_track"] == s["scheduled_arrival_track"]:
-                    track = F.blue(s["arrival_track"])
-                else:
-                    track = F.magenta(s["arrival_track"])
-            else:
-                if s["scheduled_departure_track"] is not None:
-                    track = s["scheduled_departure_track"]
-                else:
-                    # Not enough data
-                    track = ""
-        elif s["departure_track"] == s["scheduled_departure_track"]:
-            track = F.blue(s["departure_track"])
-        else:
-            # Even if scheduled track is None…
-            track = F.magenta(s["departure_track"])
-
-    res = [train, t["destination"], t["departure_time"].strftime("%H:%M"), delay, track]
-
-    # Dim the row if the train has already left the station
-    if t["departed_from_station"]:
-        for i, r in enumerate(res):
-            res[i] = S.dim(r)
+    train.number_changes = progress["train_number_changes"] if progress else None
 
     # ViaggiaTreno is not providing real-time updates
-    if not tp:
+    if not progress:
+        res = [train, dest_or_origin, time.strftime("%H:%M"), delay, track]
         for i, r in enumerate(res):
             res[i] = F.yellow(r)
+        return res
+
+    departure = None
+    stop = None
+    arrival = None
+
+    for s in progress["stops"]:
+        if s["stop_type"] == "P":
+            departure = s
+
+        if s["station_id"] == station_id:
+            stop = s
+
+        if s["stop_type"] == "A":
+            arrival = s
+
+    # It happens e.g. with train 2965 Saronno -> Milano Centrale
+    if not departure:
+        departure = progress["stops"][0]
+
+    if not arrival:
+        arrival = progress["stops"][-1]
+
+    delay = _get_delay(
+        t["delay"],
+        t["departed_from_origin"],
+        departure["actual_departure_track"] is not None,
+    )
+
+    if is_departure:
+        track = _get_track(
+            stop["actual_departure_track"],
+            stop["scheduled_departure_track"],
+            stop["actual_arrival_track"],
+        )
+    else:
+        track = _get_track(
+            stop["actual_arrival_track"], stop["scheduled_arrival_track"]
+        )
+
+    arrived = stop["arrival_time"] is not None
+    departed = stop["departure_time"] is not None
+
+    res = [train, dest_or_origin, time.strftime("%H:%M"), delay, track]
+
+    if arrived and (departed or arrival["arrival_time"]):
+        for i, r in enumerate(res):
+            res[i] = S.dim(r)
+    elif arrived and not departed:
+        for i, r in enumerate(res):
+            res[i] = S.bold(r)
 
     return res
 
@@ -154,16 +180,44 @@ def _process_train(t):
 def show_departures(station_name, station_id, dt, limit):
     print(S.bold(f"Partenze da {station_name}"))
 
-    departing_trains = API.get_departures(station_id, dt, limit)
-    if not departing_trains:
+    departures = API.get_departures(station_id, dt, limit)
+    if not departures:
         print("Nessun treno in partenza nei prossimi 90 minuti.")
         return
 
     table = PrettyTable()
     table.field_names = ["Treno", "Destinazione", "Partenza", "Ritardo", "Binario"]
 
-    with ThreadPoolExecutor(max_workers=len(departing_trains)) as executor:
-        for t in executor.map(_process_train, departing_trains):
+    with ThreadPoolExecutor(max_workers=len(departures)) as executor:
+        futures = [
+            executor.submit(_process_train, t, station_id, True) for t in departures
+        ]
+
+        for future in futures:
+            t = future.result()
+            table.add_row(t)
+
+    print(table)
+
+
+def show_arrivals(station_name, station_id, dt, limit):
+    print(S.bold(f"Arrivi a {station_name}"))
+
+    arrivals = API.get_arrivals(station_id, dt, limit)
+    if not arrivals:
+        print("Nessun treno in arrivo nei prossimi 90 minuti.")
+        return
+
+    table = PrettyTable()
+    table.field_names = ["Treno", "Provenienza", "Arrivo", "Ritardo", "Binario"]
+
+    with ThreadPoolExecutor(max_workers=len(arrivals)) as executor:
+        futures = [
+            executor.submit(_process_train, t, station_id, False) for t in arrivals
+        ]
+
+        for future in futures:
+            t = future.result()
             table.add_row(t)
 
     print(table)
@@ -231,14 +285,13 @@ if __name__ == "__main__":
     )
 
     ap.epilog = (
-        "Departures and arrivals show trains from/to"
-        "the selected station in a range from 15 minutes before"
-        "to 90 minutes after the selected time."
+        "Departures and arrivals show trains from/to the selected"
+        "station in a range from 15 minutes before to 90 minutes after"
+        "the selected time."
     )
 
     args = ap.parse_args()
 
-    # Check if the log level is validf
     if args.log_level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
         print(
             f"Invalid log level: {F.red(args.log_level)} "
@@ -272,7 +325,8 @@ if __name__ == "__main__":
         show_departures(station_name, station_id, dt, limit)
 
     if args.arrivals:
-        pass
+        station_name, station_id = choose_station(args.arrivals)
+        show_arrivals(station_name, station_id, dt, limit)
 
     if args.solutions:
         pass
