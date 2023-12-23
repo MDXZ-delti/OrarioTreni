@@ -106,7 +106,8 @@ Chiamando `partenze`, abbiamo i seguenti campi di interesse:
   "destinazione": "nome testuale della destinazione del treno",
   "dataPartenzaTreno": "data di partenza in millisecondi dalla Epoch",
   "codOrigine": "id della stazione di origine",
-  "ritardo": "ritardo in minuti (spesso a 0 quando il treno è in ritardo, usare quello di andamentoTreno)"
+  "ritardo": "ritardo in minuti (spesso a 0 quando il treno è in ritardo, usare quello di andamentoTreno)",
+  "riprogrammazione": "Y o N (yes o no a seconda che il treno sia stato riprogrammato o meno)"
 }
 ```
 
@@ -207,6 +208,49 @@ Inoltre potrebbe essere sbagliato, ad esempio su tratte di durata superiore a 24
 Si noti che i treni che cambiano numero sono lo stesso treno. Anche se il numero cambia in una certa stazione, la stazione di origine del treno è la stessa.
 
 In `fermate`, il campo `ritardo` ha il valore di `ritardoPartenza` se `tipoFermata` è `P` (ovvero se la "fermata" è la stazione di partenza del treno), di `ritardoArrivo` altrimenti.
+
+Deviazioni e sopprressioni (parziali o totali) sono da approfondire. È capitato un treno con questi campi:
+
+```json
+{
+  "tipoTreno": "VO",
+  "provvedimento": 3,
+  "subTitle": "Treno cancellato da TREVIGLIO a MILANO VILLAPIZZONE. Il treno oggi parte da MILANO PORTA GARIBALDI.",
+  "fermateSoppresse": [], // Eppure boh dovrebbero esserci
+  "hasProvvedimenti": false, // Probabilmente non c'entra
+  "origine": "MILANO PORTA GARIBALDI",
+  "destinazione": "VARESE",
+  "origineZero": "TREVIGLIO",
+  "destinazioneZero": "VARESE",
+  "orarioPartenza": 1702825380000, // 16:03 (partenza da P.ta Garibaldi)
+  "orarioPartenzaZero": null,
+  "compOrarioPartenza": "16:03",
+  "compOrarioPartenzaZero": "16:03",
+  "fermate": [
+    // Soppresse
+    {
+      "tipoFermata": "",
+      "actualFermataType": 3
+    },
+    // ...
+
+    // Effettive
+    {
+      "tipoFermata": "P",
+      "actualFermataType": 2 // altre volte (non qua) è 1
+    },
+    {
+      "tipoFermata": "F",
+      "actualFermataType": 0 // altre volte (non qua) è 1
+    },
+    // ...
+    {
+      "tipoFermata": "A",
+      "actualFermataType": 0
+    }
+  ]
+}
+```
 
 ### `elencoStazioni`
 
