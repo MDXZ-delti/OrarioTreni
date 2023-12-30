@@ -197,15 +197,17 @@ class ViaggiaTrenoAPIWrapper:
             stops.append(
                 {
                     "station_id": s["id"],
-                    "station": s["stazione"],
+                    "station_name": s["stazione"],
                     "scheduled_arrival_time": Utils.from_ms_timestamp(
                         s["arrivo_teorico"]
                     ),
-                    "arrival_time": Utils.from_ms_timestamp(s["arrivoReale"]),
+                    "actual_arrival_time": Utils.from_ms_timestamp(s["arrivoReale"]),
                     "scheduled_departure_time": Utils.from_ms_timestamp(
                         s["partenza_teorica"]
                     ),
-                    "departure_time": Utils.from_ms_timestamp(s["partenzaReale"]),
+                    "actual_departure_time": Utils.from_ms_timestamp(
+                        s["partenzaReale"]
+                    ),
                     "scheduled_arrival_track": s["binarioProgrammatoArrivoDescrizione"],
                     "actual_arrival_track": s["binarioEffettivoArrivoDescrizione"],
                     "scheduled_departure_track": s[
@@ -219,7 +221,7 @@ class ViaggiaTrenoAPIWrapper:
         # Check fermateSoppresse, tipoTreno and motivoRitardoPrevalente
         # There's a numeroTreno which is an int here
         progress = {
-            "last_update": Utils.from_ms_timestamp(r["oraUltimoRilevamento"]),
+            "last_update_time": Utils.from_ms_timestamp(r["oraUltimoRilevamento"]),
             "last_update_station": s
             if (s := r["stazioneUltimoRilevamento"]) != "--"
             else None,

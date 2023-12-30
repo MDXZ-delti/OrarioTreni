@@ -4,7 +4,7 @@ __author__ = "Matteo Delton"
 import logging
 from argparse import ArgumentParser, BooleanOptionalAction
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import inquirer
 from prettytable import PrettyTable
@@ -55,7 +55,7 @@ def choose_station(station):
     if len(s) == 1:
         return s[0]["name"], s[0]["id"]
 
-    guesses = tuple((s["name"], s["id"]) for s in s)
+    guesses = [(s["name"], s["id"]) for s in s]
     choice = inquirer.list_input(message="Seleziona la stazione", choices=guesses)
 
     name = next(s[0] for s in guesses if s[1] == choice)
@@ -162,16 +162,20 @@ def _process_train(t, station_id, is_departure):
             stop["actual_arrival_track"], stop["scheduled_arrival_track"]
         )
 
-    arrived = stop["arrival_time"] is not None
-    departed = stop["departure_time"] is not None
+    arrived = stop["actual_arrival_time"] is not None
+    departed = stop["actual_departure_time"] is not None
 
     res = [train, dest_or_origin, time.strftime("%H:%M"), delay, track]
 
-    if arrived and (departed or arrival["arrival_time"]):
+    if arrived and (departed or arrival["actual_arrival_time"]):
         for i, r in enumerate(res):
+            if i == 0:
+                continue
             res[i] = S.dim(r)
     elif arrived and not departed:
         for i, r in enumerate(res):
+            if i == 0:
+                continue
             res[i] = S.bold(r)
 
     return res
@@ -188,6 +192,7 @@ def show_departures(station_name, station_id, dt, limit):
     table = PrettyTable()
     table.field_names = ["Treno", "Destinazione", "Partenza", "Ritardo", "Binario"]
 
+    choices = []
     with ThreadPoolExecutor(max_workers=len(departures)) as executor:
         futures = [
             executor.submit(_process_train, t, station_id, True) for t in departures
@@ -196,8 +201,12 @@ def show_departures(station_name, station_id, dt, limit):
         for future in futures:
             t = future.result()
             table.add_row(t)
+            choices.append((str(t[0]), t[0]))
 
     print(table)
+
+    choice = inquirer.list_input(message="Seleziona un treno", choices=choices)
+    show_progress(choice)
 
 
 def show_arrivals(station_name, station_id, dt, limit):
@@ -222,6 +231,60 @@ def show_arrivals(station_name, station_id, dt, limit):
 
     print(table)
 
+def show_progress(train):
+    p = API.get_train_progress(train.departure_station, train.train_number, train.departure_date)
+
+    if not p:
+        print("ViaggiaTreno non sta fornendo aggiornamenti in tempo reale per questo treno.")
+        return
+
+    print(
+        f"Treno {train} · {_get_delay(p['delay'], p['stops'][0]['actual_departure_time'] is not None, p['stops'][0]['actual_departure_track'] is not None)}\n"
+        f"{p["departure_time"].strftime('%H:%M')} {p['origin']}\n"
+        f"{p["arrival_time"].strftime('%H:%M')} {p["destination"]}"
+    )
+
+    if p['last_update_station'] and p['last_update_time']:
+        print(f"\nUltimo aggiornamento: {p['last_update_time'].strftime('%H:%M')} a {p['last_update_station']}")
+
+    for s in p["stops"]:
+        track = _get_track(
+            s["actual_departure_track"] or s["actual_arrival_track"], s["scheduled_departure_track"] or s["scheduled_arrival_track"]
+        )
+
+        if track:
+            print(f"\n{s['station_name']} · {track}")
+        else:
+            print(f"\n{s['station_name']}")
+
+        if s["stop_type"] in ("A", "F"):
+            if (actual_arrival_time := s["actual_arrival_time"]):
+                if actual_arrival_time > s["scheduled_arrival_time"]:
+                    actual_arrival_time = F.red(actual_arrival_time.strftime('%H:%M'))
+                else:
+                    actual_arrival_time = F.green(actual_arrival_time.strftime('%H:%M'))
+            arr_str = f"Arr.:\t{s['scheduled_arrival_time'].strftime('%H:%M')}"
+            if actual_arrival_time:
+                arr_str += f"\t{actual_arrival_time}"
+            else:
+                if not s["actual_departure_time"]:
+                    arr_str += F.yellow(f"\t{(s['scheduled_arrival_time'] + timedelta(minutes=p['delay'])).strftime('%H:%M')}")
+            print(arr_str)
+
+        if s["stop_type"] in ("P", "F"):
+            if (actual_departure_time := s["actual_departure_time"]):
+                if actual_departure_time > s["scheduled_departure_time"] + timedelta(seconds=30):
+                    actual_departure_time = F.red(actual_departure_time.strftime('%H:%M'))
+                else:
+                    actual_departure_time = F.green(actual_departure_time.strftime('%H:%M'))
+            dep_str = f"Dep.:\t{s['scheduled_departure_time'].strftime('%H:%M')}"
+            if actual_departure_time:
+                dep_str += f"\t{actual_departure_time}"
+            else:
+                if not s["actual_arrival_time"]:
+                    dep_str += F.yellow(f"\t{(s['scheduled_departure_time'] + timedelta(minutes=p['delay'])).strftime('%H:%M')}")
+            print(dep_str)
+
 
 if __name__ == "__main__":
     ap = ArgumentParser(description="Get information about trains in Italy")
@@ -234,14 +297,14 @@ if __name__ == "__main__":
         "--departures",
         metavar="STATION",
         type=str,
-        help="show departures from a station",
+        help="show departures from STATION",
     )
     ap.add_argument(
         "-a",
         "--arrivals",
         metavar="STATION",
         type=str,
-        help="show arrivals to a station",
+        help="show arrivals to STATION",
     )
     ap.add_argument(
         "-s",
@@ -273,7 +336,7 @@ if __name__ == "__main__":
     ap.add_argument(
         "--stats",
         action=BooleanOptionalAction,
-        help="show/don't show stats (defaults to True)",
+        help="show/don't show statistics about trains (defaults to True)",
         default=True,
     )
     ap.add_argument(
@@ -285,8 +348,8 @@ if __name__ == "__main__":
     )
 
     ap.epilog = (
-        "Departures and arrivals show trains from/to the selected"
-        "station in a range from 15 minutes before to 90 minutes after"
+        "Departures and arrivals show trains from/to the selected "
+        "station in a range from 15 minutes before to 90 minutes after "
         "the selected time."
     )
 
@@ -329,4 +392,5 @@ if __name__ == "__main__":
         show_arrivals(station_name, station_id, dt, limit)
 
     if args.solutions:
+        print("Not implemented yet")
         pass
