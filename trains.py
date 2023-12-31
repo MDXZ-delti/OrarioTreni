@@ -7,10 +7,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import inquirer
-from prettytable import PrettyTable
-
 from ansicolors import Foreground as F
 from ansicolors import Style as S
+from prettytable import PrettyTable
 from viaggiatreno import ViaggiaTrenoAPIWrapper as API
 
 
@@ -231,25 +230,33 @@ def show_arrivals(station_name, station_id, dt, limit):
 
     print(table)
 
+
 def show_progress(train):
-    p = API.get_train_progress(train.departure_station, train.train_number, train.departure_date)
+    p = API.get_train_progress(
+        train.departure_station, train.train_number, train.departure_date
+    )
 
     if not p:
-        print("ViaggiaTreno non sta fornendo aggiornamenti in tempo reale per questo treno.")
+        print(
+            "ViaggiaTreno non sta fornendo aggiornamenti in tempo reale per questo treno."
+        )
         return
 
     print(
         f"Treno {train} · {_get_delay(p['delay'], p['stops'][0]['actual_departure_time'] is not None, p['stops'][0]['actual_departure_track'] is not None)}\n"
-        f"{p["departure_time"].strftime('%H:%M')} {p['origin']}\n"
-        f"{p["arrival_time"].strftime('%H:%M')} {p["destination"]}"
+        f"{p['departure_time'].strftime('%H:%M')} {p['origin']}\n"
+        f"{p['arrival_time'].strftime('%H:%M')} {p['destination']}"
     )
 
-    if p['last_update_station'] and p['last_update_time']:
-        print(f"\nUltimo aggiornamento: {p['last_update_time'].strftime('%H:%M')} a {p['last_update_station']}")
+    if p["last_update_station"] and p["last_update_time"]:
+        print(
+            f"\nUltimo aggiornamento: {p['last_update_time'].strftime('%H:%M')} a {p['last_update_station']}"
+        )
 
     for s in p["stops"]:
         track = _get_track(
-            s["actual_departure_track"] or s["actual_arrival_track"], s["scheduled_departure_track"] or s["scheduled_arrival_track"]
+            s["actual_departure_track"] or s["actual_arrival_track"],
+            s["scheduled_departure_track"] or s["scheduled_arrival_track"],
         )
 
         if track:
@@ -258,31 +265,41 @@ def show_progress(train):
             print(f"\n{s['station_name']}")
 
         if s["stop_type"] in ("A", "F"):
-            if (actual_arrival_time := s["actual_arrival_time"]):
+            if actual_arrival_time := s["actual_arrival_time"]:
                 if actual_arrival_time > s["scheduled_arrival_time"]:
-                    actual_arrival_time = F.red(actual_arrival_time.strftime('%H:%M'))
+                    actual_arrival_time = F.red(actual_arrival_time.strftime("%H:%M"))
                 else:
-                    actual_arrival_time = F.green(actual_arrival_time.strftime('%H:%M'))
+                    actual_arrival_time = F.green(actual_arrival_time.strftime("%H:%M"))
             arr_str = f"Arr.:\t{s['scheduled_arrival_time'].strftime('%H:%M')}"
             if actual_arrival_time:
                 arr_str += f"\t{actual_arrival_time}"
             else:
                 if not s["actual_departure_time"]:
-                    arr_str += F.yellow(f"\t{(s['scheduled_arrival_time'] + timedelta(minutes=p['delay'])).strftime('%H:%M')}")
+                    arr_str += F.yellow(
+                        f"\t{(s['scheduled_arrival_time'] + timedelta(minutes=p['delay'])).strftime('%H:%M')}"
+                    )
             print(arr_str)
 
         if s["stop_type"] in ("P", "F"):
-            if (actual_departure_time := s["actual_departure_time"]):
-                if actual_departure_time > s["scheduled_departure_time"] + timedelta(seconds=30):
-                    actual_departure_time = F.red(actual_departure_time.strftime('%H:%M'))
+            if actual_departure_time := s["actual_departure_time"]:
+                if actual_departure_time > s["scheduled_departure_time"] + timedelta(
+                    seconds=30
+                ):
+                    actual_departure_time = F.red(
+                        actual_departure_time.strftime("%H:%M")
+                    )
                 else:
-                    actual_departure_time = F.green(actual_departure_time.strftime('%H:%M'))
+                    actual_departure_time = F.green(
+                        actual_departure_time.strftime("%H:%M")
+                    )
             dep_str = f"Dep.:\t{s['scheduled_departure_time'].strftime('%H:%M')}"
             if actual_departure_time:
                 dep_str += f"\t{actual_departure_time}"
             else:
                 if not s["actual_arrival_time"]:
-                    dep_str += F.yellow(f"\t{(s['scheduled_departure_time'] + timedelta(minutes=p['delay'])).strftime('%H:%M')}")
+                    dep_str += F.yellow(
+                        f"\t{(s['scheduled_departure_time'] + timedelta(minutes=p['delay'])).strftime('%H:%M')}"
+                    )
             print(dep_str)
 
 
